@@ -23,12 +23,12 @@ const AlertSystem: React.FC<AlertSystemProps> = ({ disasters }) => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 space-y-3 z-40">
+    <>
       <AnimatePresence>
         {alerts.map((alert) => (
           <motion.div
             key={alert.id}
-            className="bg-red-600/90 backdrop-blur-md rounded-lg p-4 border border-red-500 min-w-[300px] max-w-[400px]"
+            className="bg-red-600/90 backdrop-blur-md rounded-lg p-4 border border-red-500 min-w-[300px] max-w-[400px] fixed bottom-6 right-6 space-y-3 z-40"
             initial={{ opacity: 0, y: 100, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -100, scale: 0.8 }}
@@ -55,7 +55,7 @@ const AlertSystem: React.FC<AlertSystemProps> = ({ disasters }) => {
           </motion.div>
         ))}
       </AnimatePresence>
-    </div>
+    </>
   );
 };
 

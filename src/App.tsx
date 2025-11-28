@@ -3,8 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Header from './components/Header';
 import MapContainer from './components/MapContainer';
 import Sidebar from './components/Sidebar';
-import StatsOverlay from './components/StatsOverlay';
-import AlertSystem from './components/AlertSystem';
 import Footer from './components/Footer';
 import { ClimateData, DisasterEvent, EnvironmentalData } from './types';
 import { climateAPI } from './services/api';
@@ -77,16 +75,7 @@ function App() {
         </div>
       )}
 
-      {/* Award Banner */}
-      <div className="fixed top-0 left-0 right-0 z-[60] bg-gradient-to-r from-yellow-400 to-yellow-500 text-gray-900 py-1 px-4 text-center shadow-sm">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-center space-x-1 text-xs">
-            <span className="text-sm">🏆</span>
-            <span className="font-bold">FAN FAVORITE WINNER</span>
-            <span className="font-medium">Google Maps Platform Awards 2025</span>
-          </div>
-        </div>
-      </div>
+      {/* Award banner removed */}
 
       <Header 
         selectedDataType={selectedDataType} 
@@ -117,25 +106,13 @@ function App() {
             onLocationSelect={setSelectedLocation}
           />
           
-          <StatsOverlay 
-            climateData={climateData}
-            disasters={disasters}
-            environmentalData={environmentalData}
-          />
-          
-          <AlertSystem disasters={disasters} />
         </div>
       </div>
 
       {/* API Status indicator (hidden) */}
       {/* Removed display of "Mock Data" badge to keep UI clean per requirements */}
 
-      {/* Google Maps Platform Attribution */}
-      <div className="fixed bottom-16 right-48 bg-gray-800/80 backdrop-blur-sm rounded-md p-2 border border-gray-700/50 z-50">
-        <div className="text-xs text-gray-400">
-          Powered by Google Maps Platform API
-        </div>
-      </div>
+      {/* Google Maps attribution removed from visible UI */}
 
       <Footer />
     </div>

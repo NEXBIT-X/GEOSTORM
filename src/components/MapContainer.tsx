@@ -367,61 +367,6 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   return (
     <div className={`relative w-full h-full ${getMapBackground()}`}>
-      {/* Enhanced Controls */}
-      <div className="absolute top-4 right-4 z-40 flex gap-3">
-        <div className="px-3 py-2 bg-gray-900/90 backdrop-blur-md rounded-lg border border-gray-600 text-sm text-gray-300 flex items-center gap-2">
-          <button
-            onClick={() => setLiveEnabled(!liveEnabled)}
-            className={`px-2 py-1 rounded-md text-xs font-medium ${liveEnabled ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-300'}`}
-          >
-            {liveEnabled ? (liveLoading ? 'Live (loading...)' : 'Live ON') : 'Live OFF'}
-          </button>
-          {liveError && <div className="text-xs text-amber-400">Error</div>}
-        </div>
-        
-        {/* Live data summary */}
-        <div className="px-3 py-2 bg-gray-900/90 backdrop-blur-md rounded-lg border border-gray-600 text-sm text-gray-300 flex flex-col items-start gap-1">
-          <div className="text-xs text-gray-400">Data Source</div>
-          <div className="text-sm font-semibold">
-            {liveEnabled ? (liveLoading ? 'Live (loading...)' : 'Live') : 'Local'}
-          </div>
-          <div className="text-xs text-gray-300 mt-1">
-            <span className="font-medium">Disasters:</span> {liveEnabled ? liveDataState.disasters.length : disasters.length}
-          </div>
-          <div className="text-xs text-gray-300">
-            <span className="font-medium">Stations:</span> {liveEnabled ? liveDataState.environmental.length : environmentalData.length}
-          </div>
-          <div className="text-xs text-gray-300">
-            <span className="font-medium">Climate points:</span> {liveEnabled ? liveDataState.climate.length : climateData.length}
-          </div>
-        </div>
-        
-        <motion.button
-          onClick={() => setShowConnections(!showConnections)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all backdrop-blur-md border ${
-            showConnections 
-              ? 'bg-blue-600/90 text-white border-blue-500' 
-              : 'bg-gray-800/90 text-gray-300 hover:bg-gray-700/90 border-gray-600'
-          }`}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          {showConnections ? 'Hide Connections' : 'Show Connections'}
-        </motion.button>
-        
-        <motion.button
-          onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all backdrop-blur-md border ${
-            showHeatmap 
-              ? 'bg-red-600/90 text-white border-red-500' 
-              : 'bg-gray-800/90 text-gray-300 hover:bg-gray-700/90 border-gray-600'
-          }`}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          {showHeatmap ? 'Hide Heatmap' : 'Show Heatmap'}
-        </motion.button>
-      </div>
 
       {/* World Map with Real-time Coloring */}
       <div className="w-full h-full relative overflow-hidden">

@@ -118,6 +118,22 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
         try { mat.map.anisotropy = maxAniso; } catch (e) { /* ignore */ }
         try { mat.map.minFilter = THREE.LinearFilter; mat.map.magFilter = THREE.LinearFilter; } catch (e) { /* ignore */ }
         mat.map.needsUpdate = true;
+        // aggressively reduce rim/halo by clearing reflective/emissive properties
+        try {
+          if (mat.emissive && typeof mat.emissive.set === 'function') mat.emissive.set(0x000000);
+          if (typeof (mat as any).emissiveIntensity !== 'undefined') (mat as any).emissiveIntensity = 0;
+          if (mat.specular && typeof mat.specular.set === 'function') mat.specular.set(0x000000);
+          if (typeof (mat as any).shininess !== 'undefined') (mat as any).shininess = 0;
+          if (typeof (mat as any).bumpScale !== 'undefined') (mat as any).bumpScale = 0.0;
+          if (typeof (mat as any).envMap !== 'undefined') (mat as any).envMap = null;
+          if (typeof (mat as any).envMapIntensity !== 'undefined') (mat as any).envMapIntensity = 0;
+          if (typeof (mat as any).metalness !== 'undefined') (mat as any).metalness = 0;
+          if (typeof (mat as any).roughness !== 'undefined') (mat as any).roughness = 1;
+          if (typeof (mat as any).reflectivity !== 'undefined') (mat as any).reflectivity = 0;
+          if (typeof (mat as any).specularMap !== 'undefined') (mat as any).specularMap = null;
+          if (typeof (mat as any).emissiveMap !== 'undefined') (mat as any).emissiveMap = null;
+          mat.needsUpdate = true;
+        } catch (e) { /* ignore */ }
       }
 
       // clouds/bump texture
@@ -248,8 +264,47 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
     return () => { mounted = false; };
   }, [countryDetails, selectedCountry]);
 
+  useEffect(() => {
+    // enable smooth auto-rotation to mimic Earth's rotation
+    try {
+      if (!globeEl.current) return;
+      const controls = globeEl.current.controls && globeEl.current.controls();
+      if (controls) {
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.35; // tune for realistic slow rotation
+      }
+    } catch (e) {
+      // ignore if controls aren't available yet
+    }
+  }, []);
+
+  // compute a square globe size that fits within the available viewport while leaving room for UI
+  const headerReserve = 140; // approximate header + footer reserved space
+  const computeGlobeSize = () => {
+    const globeHeight = Math.max(300, window.innerHeight - headerReserve);
+    return Math.max(400, Math.min(window.innerWidth - 80, globeHeight));
+  };
+  const [globeSize, setGlobeSize] = useState<number>(computeGlobeSize());
+
+  useEffect(() => {
+    const onResize = () => {
+      setGlobeSize(computeGlobeSize());
+      try { configureQuality(); } catch (e) { /* ignore */ }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   return (
-    <div className="absolute inset-0 z-0">
+    <div className="absolute inset-0 z-0 flex items-center justify-center" style={{
+      backgroundImage: `radial-gradient(circle at 20% 10%, rgba(36,30,72,0.6) 0%, rgba(6,8,23,1) 60%),
+                        radial-gradient(circle at 80% 80%, rgba(60,40,100,0.08) 0%, transparent 20%),
+                        radial-gradient(#ffffff 1px, transparent 1px),
+                        radial-gradient(#ffffff 0.6px, transparent 0.6px)` ,
+      backgroundSize: 'cover, cover, 200px 200px, 400px 400px',
+      backgroundRepeat: 'no-repeat, no-repeat, repeat, repeat',
+      backgroundPosition: 'center, center, 0 0, 100px 100px'
+    }}>
       <Globe
         ref={globeEl}
         // higher-resolution base map to reduce blur (large image; may increase load time)
@@ -299,21 +354,56 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
         polygonStrokeColor={() => 'rgba(200,200,200,0.15)'}
         polygonAltitude={() => 0.01}
         onPolygonClick={(p: any) => {
-          setSelectedCountry(p);
-          if (globeEl.current && p && p.properties && p.properties.name) {
-            // compute centroid to center
-            const coords = p.geometry && p.geometry.coordinates && p.geometry.coordinates[0];
-            const lonlat = coords && coords[0] ? coords[0] : null;
-            if (p && p.properties && p.properties && lonlat) {
-              const lng = lonlat[0];
-              const lat = lonlat[1];
-              globeEl.current.pointOfView({ lat, lng, altitude: 1.5 }, 800);
+          // compute robust centroid via 3D averaging (handles dateline and multipolygons)
+          try {
+            if (!p || !p.geometry || !p.geometry.coordinates) return;
+            const coords = p.geometry.coordinates;
+            const pts: Array<[number, number]> = [];
+            const collect = (arr: any) => {
+              if (!Array.isArray(arr)) return;
+              if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
+                pts.push([arr[0], arr[1]]);
+                return;
+              }
+              for (const a of arr) collect(a);
+            };
+            collect(coords);
+            if (pts.length === 0) return;
+
+            // average as 3D unit vectors
+            let x = 0, y = 0, z = 0;
+            let lonMin = Infinity, lonMax = -Infinity, latMin = Infinity, latMax = -Infinity;
+            for (const [lon, lat] of pts) {
+              const radLon = lon * Math.PI / 180;
+              const radLat = lat * Math.PI / 180;
+              const cx = Math.cos(radLat) * Math.cos(radLon);
+              const cy = Math.cos(radLat) * Math.sin(radLon);
+              const cz = Math.sin(radLat);
+              x += cx; y += cy; z += cz;
+              if (lon < lonMin) lonMin = lon;
+              if (lon > lonMax) lonMax = lon;
+              if (lat < latMin) latMin = lat;
+              if (lat > latMax) latMax = lat;
             }
+            const len = Math.sqrt(x * x + y * y + z * z);
+            if (len === 0) return;
+            const avgX = x / len, avgY = y / len, avgZ = z / len;
+            const centroidLat = Math.asin(avgZ) * 180 / Math.PI;
+            const centroidLon = Math.atan2(avgY, avgX) * 180 / Math.PI;
+
+            if (globeEl.current && Number.isFinite(centroidLat) && Number.isFinite(centroidLon)) {
+              globeEl.current.pointOfView({ lat: centroidLat, lng: centroidLon, altitude: 1.5 }, 800);
+            }
+
+            // keep the full geojson feature so downstream effects can fetch details
+            setSelectedCountry(p);
+          } catch (e) {
+            // ignore
           }
         }}
         polygonsTransitionDuration={300}
-        width={window.innerWidth}
-        height={window.innerHeight}
+        width={globeSize}
+        height={globeSize}
       />
 
       {/* Polar overlay when user clicks near the poles */}
