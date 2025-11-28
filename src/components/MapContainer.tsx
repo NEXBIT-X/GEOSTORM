@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
-import WorldMap from './WorldMap';
+import RealWorldMap from './RealWorldMap';
+import GlobeMap from './GlobeMap';
+import { fetchLiveData } from '../services/liveData';
 
 interface MapContainerProps {
   dataType: 'temperature' | 'disasters' | 'environmental';
@@ -22,19 +24,58 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const [selectedMarker, setSelectedMarker] = useState<any>(null);
   const [showConnections, setShowConnections] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [liveEnabled, setLiveEnabled] = useState(true);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveDataState, setLiveDataState] = useState<{
+    disasters: DisasterEvent[];
+    environmental: EnvironmentalData[];
+    climate: ClimateData[];
+  }>({ disasters: [], environmental: [], climate: [] });
 
   const getCurrentData = () => {
+    const src = liveEnabled ? liveDataState : undefined;
     switch (dataType) {
       case 'temperature':
-        return climateData;
+        return src ? src.climate : climateData;
       case 'disasters':
-        return disasters;
+        return src ? src.disasters : disasters;
       case 'environmental':
-        return environmentalData;
+        return src ? src.environmental : environmentalData;
       default:
         return [];
     }
   };
+
+  useEffect(() => {
+    let mounted = true;
+    let timer: any = null;
+
+    const poll = async () => {
+      if (!liveEnabled) return;
+      setLiveLoading(true);
+      setLiveError(null);
+      try {
+        const d = await fetchLiveData();
+        if (!mounted) return;
+        setLiveDataState(d);
+      } catch (err: any) {
+        setLiveError(err?.message || String(err));
+      } finally {
+        if (mounted) setLiveLoading(false);
+      }
+    };
+
+    // initial poll
+    poll();
+    // poll every 60s
+    if (liveEnabled) timer = setInterval(poll, 60000);
+
+    return () => {
+      mounted = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [liveEnabled]);
 
   const getMarkerColor = (item?: any) => {
     switch (dataType) {
@@ -329,8 +370,30 @@ const MapContainer: React.FC<MapContainerProps> = ({
       {/* Enhanced Controls */}
       <div className="absolute top-4 right-4 z-40 flex gap-3">
         <div className="px-3 py-2 bg-gray-900/90 backdrop-blur-md rounded-lg border border-gray-600 text-sm text-gray-300 flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          <span>Real-time</span>
+          <button
+            onClick={() => setLiveEnabled(!liveEnabled)}
+            className={`px-2 py-1 rounded-md text-xs font-medium ${liveEnabled ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-300'}`}
+          >
+            {liveEnabled ? (liveLoading ? 'Live (loading...)' : 'Live ON') : 'Live OFF'}
+          </button>
+          {liveError && <div className="text-xs text-amber-400">Error</div>}
+        </div>
+        
+        {/* Live data summary */}
+        <div className="px-3 py-2 bg-gray-900/90 backdrop-blur-md rounded-lg border border-gray-600 text-sm text-gray-300 flex flex-col items-start gap-1">
+          <div className="text-xs text-gray-400">Data Source</div>
+          <div className="text-sm font-semibold">
+            {liveEnabled ? (liveLoading ? 'Live (loading...)' : 'Live') : 'Local'}
+          </div>
+          <div className="text-xs text-gray-300 mt-1">
+            <span className="font-medium">Disasters:</span> {liveEnabled ? liveDataState.disasters.length : disasters.length}
+          </div>
+          <div className="text-xs text-gray-300">
+            <span className="font-medium">Stations:</span> {liveEnabled ? liveDataState.environmental.length : environmentalData.length}
+          </div>
+          <div className="text-xs text-gray-300">
+            <span className="font-medium">Climate points:</span> {liveEnabled ? liveDataState.climate.length : climateData.length}
+          </div>
         </div>
         
         <motion.button
@@ -362,18 +425,13 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
       {/* World Map with Real-time Coloring */}
       <div className="w-full h-full relative overflow-hidden">
-        <WorldMap 
+        {/* Render 3D globe (replace flat map) */}
+        <GlobeMap
           dataType={dataType}
           climateData={climateData}
           disasters={disasters}
           environmentalData={environmentalData}
         />
-        
-        {/* Connection lines overlay */}
-        {renderConnections()}
-
-        {/* Data markers */}
-        {renderMarkers()}
       </div>
 
       {/* Enhanced Legend with Color Coding */}

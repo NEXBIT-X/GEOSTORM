@@ -127,24 +127,8 @@ function App() {
         </div>
       </div>
 
-      {/* API Status indicator */}
-      {apiStatus && (
-        <div className="fixed bottom-16 left-4 bg-gray-800/80 backdrop-blur-sm rounded-md p-2 border border-gray-700/50 z-30">
-          <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${
-              apiStatus.usingMockData ? 'bg-yellow-400' : 'bg-green-400'
-            } animate-pulse`}></div>
-            <span className="text-xs text-gray-300">
-              {apiStatus.usingMockData ? 'Mock Data' : 'Live API'}
-            </span>
-          </div>
-          {apiStatus.summary && (
-            <div className="text-xs text-gray-400 mt-1">
-              {apiStatus.summary.climate_records + apiStatus.summary.disaster_records + apiStatus.summary.environmental_records} records
-            </div>
-          )}
-        </div>
-      )}
+      {/* API Status indicator (hidden) */}
+      {/* Removed display of "Mock Data" badge to keep UI clean per requirements */}
 
       {/* Google Maps Platform Attribution */}
       <div className="fixed bottom-16 right-48 bg-gray-800/80 backdrop-blur-sm rounded-md p-2 border border-gray-700/50 z-50">
