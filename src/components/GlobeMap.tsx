@@ -82,7 +82,7 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   const [countryWeather, setCountryWeather] = useState<any | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   // progressive globe image: low-res then swap to high-res
-  const lowResGlobe = 'https://unpkg.com/three-globe/example/img/earth-day.jpg';
+  const lowResGlobe = '/8081_earthmap10k.jpg';
   const highResGlobe = '/8081_earthmap10k.jpg';
   const [globeImage, setGlobeImage] = useState<string>(highResGlobe);
   const localBump = '/textures/earth-bump.jpg';
