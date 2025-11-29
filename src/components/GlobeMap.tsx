@@ -3,6 +3,7 @@ import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
 import Card from './ui/Card';
+import { fetchWeatherForPoint, isStormForecast } from '../services/openMeteo';
 
 // Map Open-Meteo weather codes to emoji/icon + description
 const weatherCodeToIcon = (code: number | null | undefined) => {
@@ -45,9 +46,12 @@ interface GlobeMapProps {
   climateData: ClimateData[];
   disasters: DisasterEvent[];
   environmentalData: EnvironmentalData[];
+  apiAction?: 'openmeteo_current' | 'openmeteo_hourly' | 'openmeteo_daily';
+  onApiConsumed?: () => void;
+  focusCoord?: { lat: number; lng: number; label?: string } | undefined;
 }
 
-const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, environmentalData }) => {
+const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, environmentalData, apiAction, onApiConsumed, focusCoord }) => {
   const globeEl = useRef<any>(null);
 
   const data = useMemo(() => {
@@ -79,8 +83,11 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   const [weatherLoading, setWeatherLoading] = useState(false);
   // progressive globe image: low-res then swap to high-res
   const lowResGlobe = 'https://unpkg.com/three-globe/example/img/earth-day.jpg';
-  const highResGlobe = 'https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74414/world.200412.3x5400x2700.jpg';
-  const [globeImage, setGlobeImage] = useState<string>(lowResGlobe);
+  const highResGlobe = '/8081_earthmap10k.jpg';
+  const [globeImage, setGlobeImage] = useState<string>(highResGlobe);
+  const localBump = '/textures/earth-bump.jpg';
+  const fallbackBump = 'https://threejs.org/examples/textures/earthbump1k.jpg';
+  const [bumpImage, setBumpImage] = useState<string>(fallbackBump);
   const [polarInfo, setPolarInfo] = useState<{ lat: number; lng: number; current?: any | null; daily?: any | null; loading?: boolean } | null>(null);
 
   // simple in-memory cache for weather by key (iso or name)
@@ -99,7 +106,7 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   useEffect(() => {
     // Zoom/preset options
     if (globeEl.current) {
-      globeEl.current.pointOfView({ lat: 20, lng: 0, altitude: 2 }, 800);
+      globeEl.current.pointOfView({ lat: 20, lng: 0, altitude: 1.6 }, 800);
     }
   }, [points.length]);
 
@@ -151,19 +158,30 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
     return () => window.removeEventListener('resize', configureQuality);
   }, []);
 
-  // Progressive load: preload the high-res image and swap when ready
+  // Validate texture availability; fallback to low-res if missing
   useEffect(() => {
     let mounted = true;
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     img.src = highResGlobe;
     img.onload = () => {
       if (!mounted) return;
       setGlobeImage(highResGlobe);
-      // reconfigure material quality after image swap
       setTimeout(() => configureQuality(), 50);
     };
-    img.onerror = () => { /* keep low-res on error */ };
+    img.onerror = () => {
+      if (!mounted) return;
+      setGlobeImage(lowResGlobe);
+    };
+    return () => { mounted = false; };
+  }, [highResGlobe]);
+
+  // Preload local bump map; fallback to remote if missing
+  useEffect(() => {
+    let mounted = true;
+    const img = new Image();
+    img.src = localBump;
+    img.onload = () => { if (mounted) setBumpImage(localBump); };
+    img.onerror = () => { if (mounted) setBumpImage(fallbackBump); };
     return () => { mounted = false; };
   }, []);
 
@@ -271,56 +289,289 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       const controls = globeEl.current.controls && globeEl.current.controls();
       if (controls) {
         controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.35; // tune for realistic slow rotation
+        controls.autoRotateSpeed = 0.25; // tune for realistic slow rotation
       }
     } catch (e) {
       // ignore if controls aren't available yet
     }
   }, []);
 
-  // compute a square globe size that fits within the available viewport while leaving room for UI
-  const headerReserve = 140; // approximate header + footer reserved space
-  const computeGlobeSize = () => {
-    const globeHeight = Math.max(300, window.innerHeight - headerReserve);
-    return Math.max(400, Math.min(window.innerWidth - 80, globeHeight));
-  };
-  const [globeSize, setGlobeSize] = useState<number>(computeGlobeSize());
+  // Make globe fill the viewport completely
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [globeW, setGlobeW] = useState<number>(window.innerWidth);
+  const [globeH, setGlobeH] = useState<number>(window.innerHeight);
+  const [pointWeather, setPointWeather] = useState<any | null>(null);
+  const [lastCoord, setLastCoord] = useState<{ lat: number; lng: number; label?: string } | null>(null);
+  const [overlayMode, setOverlayMode] = useState<'current' | 'hourly' | 'daily'>('current');
+  const [overlayError, setOverlayError] = useState<string | null>(null);
+  const [stormPath, setStormPath] = useState<Array<{ lat: number; lng: number; size: number; color: string }>>([]);
+
+  // Space background and planets
+  const spaceGroupRef = useRef<any>(null);
+  const planetsRef = useRef<Array<{ mesh: any; orbitRadius: number; speed: number; angle: number; selfRot: number }>>([]);
+  const animRef = useRef<number | null>(null);
+  const clockRef = useRef<any>(null);
 
   useEffect(() => {
     const onResize = () => {
-      setGlobeSize(computeGlobeSize());
+      setGlobeW(window.innerWidth);
+      setGlobeH(window.innerHeight);
       try { configureQuality(); } catch (e) { /* ignore */ }
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // External focus (from search)
+  useEffect(() => {
+    if (!focusCoord) return;
+    try {
+      if (globeEl.current) globeEl.current.pointOfView({ lat: focusCoord.lat, lng: focusCoord.lng, altitude: 1.4 }, 900);
+      (async () => {
+        try {
+          const w = await fetchWeatherForPoint(focusCoord.lat, focusCoord.lng);
+          setPointWeather({ coord: focusCoord, data: w, storm: isStormForecast(w) });
+          setLastCoord({ lat: focusCoord.lat, lng: focusCoord.lng, label: focusCoord.label });
+        } catch {}
+      })();
+    } catch {}
+  }, [focusCoord?.lat, focusCoord?.lng]);
+
+  // Build animated space background with nearby planets
+  useEffect(() => {
+    if (!globeEl.current) return;
+    const scene: any = globeEl.current.scene && globeEl.current.scene();
+    if (!scene) return;
+
+    // Group to hold stars and planets
+    const group = new THREE.Group();
+    spaceGroupRef.current = group;
+
+    // Starfield
+    const STAR_COUNT = 4000;
+    const positions = new Float32Array(STAR_COUNT * 3);
+    const minR = 600, maxR = 900;
+    for (let i = 0; i < STAR_COUNT; i++) {
+      // random point on sphere shell between minR..maxR
+      const u = Math.random();
+      const v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      const r = minR + Math.random() * (maxR - minR);
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = r * Math.sin(phi) * Math.sin(theta);
+      const z = r * Math.cos(phi);
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.1, sizeAttenuation: true, transparent: true, opacity: 0.9 });
+    const stars = new THREE.Points(starGeo, starMat);
+    group.add(stars);
+
+    // Lights for planets (subtle)
+    const ambient = new THREE.AmbientLight(0x888888, 0.35);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.45);
+    dirLight.position.set(5, 10, 7);
+    group.add(ambient);
+    group.add(dirLight);
+
+    // Soft sun sprite (billboard) far away
+    const sunTex = new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/sprites/spark1.png');
+    const sunMat = new THREE.SpriteMaterial({ map: sunTex, color: 0xffdd88, transparent: true, opacity: 0.8 });
+    const sun = new THREE.Sprite(sunMat);
+    sun.scale.set(60, 60, 1);
+    sun.position.set(-300, 150, -600);
+    group.add(sun);
+
+    // Texture loader with graceful fallback
+    const loader = new THREE.TextureLoader();
+    const tryTexture = (path: string) => {
+      try {
+        const tex = loader.load(path);
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        return tex;
+      } catch { return null; }
+    };
+
+    // Helper to create a planet with optional texture
+    const createPlanet = (color: number, radius: number, orbitRadius: number, speed: number, initialAngle: number, texturePath?: string) => {
+      const geo = new THREE.SphereGeometry(radius, 48, 48);
+      const tex = texturePath ? tryTexture(texturePath) : null;
+      const mat = tex
+        ? new THREE.MeshPhongMaterial({ map: tex, shininess: 6 })
+        : new THREE.MeshPhongMaterial({ color, shininess: 8 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(orbitRadius * Math.cos(initialAngle), radius * 0.1, orbitRadius * Math.sin(initialAngle));
+      group.add(mesh);
+      planetsRef.current.push({ mesh, orbitRadius, speed, angle: initialAngle, selfRot: 0.2 + Math.random() * 0.2 });
+    };
+
+    // Nearby stylized planets (not to scale)
+    createPlanet(0xaaaaaa, 0.27, 3.2, 0.04, Math.random() * Math.PI * 2, '/textures/moon.jpg');
+    createPlanet(0xcc8844, 0.30, 4.2, 0.03, Math.random() * Math.PI * 2, '/textures/venus.jpg');
+    createPlanet(0xb03030, 0.33, 5.5, 0.02, Math.random() * Math.PI * 2, '/textures/mars.jpg');
+
+    // Nebula sprites for depth
+    const makeNebula = (color: number, scale: number, pos: [number, number, number], rotY: number) => {
+      const nTex = new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/sprites/smokeparticle.png');
+      const nMat = new THREE.SpriteMaterial({ map: nTex, color, transparent: true, opacity: 0.35 });
+      const n = new THREE.Sprite(nMat);
+      n.scale.set(scale, scale, 1);
+      n.position.set(pos[0], pos[1], pos[2]);
+      n.rotation.y = rotY;
+      group.add(n);
+    };
+    const nebulae: any[] = [];
+    const n1 = makeNebula(0x77aaff, 120, [500, -100, -700], 0.2);
+    const n2 = makeNebula(0xff99cc, 140, [-650, 80, 800], -0.3);
+    const n3 = makeNebula(0x99ffaa, 100, [300, 150, 600], 0.6);
+    nebulae.push(n1, n2, n3);
+
+    // Milky Way skysphere (inside-out sphere with texture)
+    const skyGeo = new THREE.SphereGeometry(1200, 64, 64);
+    skyGeo.scale(-1, 1, 1);
+    const milkyTex = tryTexture('/textures/milkyway.jpg') || tryTexture('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/skybox/milkyway.jpg');
+    const skyMat = new THREE.MeshBasicMaterial({ map: milkyTex ?? undefined, color: milkyTex ? 0xffffff : 0x101018 });
+    const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+    group.add(skyMesh);
+
+    scene.add(group);
+
+    // Animation loop (piggybacks on three render loop)
+    const clock = new THREE.Clock();
+    clockRef.current = clock;
+    const animate = () => {
+      const dt = clock.getDelta();
+      // slow rotation of starfield
+      group.rotation.y += dt * 0.01;
+      // orbit planets
+      for (const p of planetsRef.current) {
+        p.angle += dt * p.speed;
+        const x = p.orbitRadius * Math.cos(p.angle);
+        const z = p.orbitRadius * Math.sin(p.angle);
+        p.mesh.position.set(x, p.mesh.position.y, z);
+        p.mesh.rotation.y += dt * p.selfRot;
+      }
+      // subtle parallax: shift nebula slightly based on globe POV
+      try {
+        const pov = globeEl.current.pointOfView && globeEl.current.pointOfView();
+        const lat = pov?.lat ?? 0;
+        const lng = pov?.lng ?? 0;
+        const parX = Math.sin((lng * Math.PI) / 180) * 8;
+        const parY = Math.sin((lat * Math.PI) / 180) * 5;
+        nebulae.forEach((n, i) => {
+          if (!n) return;
+          const k = 0.02 + i * 0.01;
+          n.position.x += (parX - n.position.x) * k;
+          n.position.y += (parY - n.position.y) * k;
+        });
+      } catch {}
+      animRef.current = requestAnimationFrame(animate);
+    };
+    animRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animRef.current != null) cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+      // cleanup
+      try {
+        scene.remove(group);
+        group.traverse((obj: any) => {
+          // dispose geometries and materials
+          const anyObj: any = obj as any;
+          if (anyObj.geometry && typeof anyObj.geometry.dispose === 'function') anyObj.geometry.dispose();
+          if (anyObj.material) {
+            const m = anyObj.material;
+            if (Array.isArray(m)) m.forEach(mm => mm && mm.dispose && mm.dispose());
+            else if (m && typeof m.dispose === 'function') m.dispose();
+          }
+        });
+      } catch {}
+      planetsRef.current = [];
+      spaceGroupRef.current = null;
+    };
+  }, []);
+
+  // Trigger Open‑Meteo fetches from sidebar actions
+  useEffect(() => {
+    if (!apiAction) return;
+    const coord = lastCoord ?? { lat: 20, lng: 0, label: 'Selected location' };
+    (async () => {
+      try {
+        setOverlayError(null);
+        if (apiAction === 'openmeteo_current') setOverlayMode('current');
+        if (apiAction === 'openmeteo_hourly') setOverlayMode('hourly');
+        if (apiAction === 'openmeteo_daily') setOverlayMode('daily');
+        const w = await fetchWeatherForPoint(coord.lat, coord.lng);
+        setPointWeather({ coord, data: w, storm: isStormForecast(w) });
+        // Build storm path if windy
+        try {
+          const speed = w?.current?.wind_speed_10m || 0;
+          const directionDeg = (w as any)?.current?.wind_direction_10m || (w as any)?.current?.winddirection || 0; // attempt multiple keys via any-cast
+          if (speed > 5) {
+            const R = 6371; // km
+            const steps = 6;
+            const path: Array<{ lat: number; lng: number; size: number; color: string }> = [];
+            for (let i = 1; i <= steps; i++) {
+              const distanceKm = (speed * 3600 / 1000) * i; // simplistic: 1 hour increments
+              const brng = directionDeg * Math.PI / 180;
+              const lat1 = coord.lat * Math.PI / 180;
+              const lng1 = coord.lng * Math.PI / 180;
+              const dR = distanceKm / R;
+              const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dR) + Math.cos(lat1) * Math.sin(dR) * Math.cos(brng));
+              const lng2 = lng1 + Math.atan2(Math.sin(brng) * Math.sin(dR) * Math.cos(lat1), Math.cos(dR) - Math.sin(lat1) * Math.sin(lat2));
+              const newLat = lat2 * 180 / Math.PI;
+              const newLng = lng2 * 180 / Math.PI;
+              path.push({ lat: newLat, lng: newLng, size: 2, color: '#ff5252' });
+            }
+            setStormPath(path);
+          } else {
+            setStormPath([]);
+          }
+        } catch { setStormPath([]); }
+      } catch (e: any) {
+        setOverlayError('Failed to fetch weather data');
+      }
+      finally {
+        // signal to parent so repeated clicks of same action still work
+        try { onApiConsumed && onApiConsumed(); } catch {}
+      }
+    })();
+    // Do not change camera/zoom here
+  }, [apiAction]);
+
   return (
-    <div className="absolute inset-0 z-0 flex items-center justify-center" style={{
-      backgroundImage: `radial-gradient(circle at 20% 10%, rgba(36,30,72,0.6) 0%, rgba(6,8,23,1) 60%),
-                        radial-gradient(circle at 80% 80%, rgba(60,40,100,0.08) 0%, transparent 20%),
-                        radial-gradient(#ffffff 1px, transparent 1px),
-                        radial-gradient(#ffffff 0.6px, transparent 0.6px)` ,
-      backgroundSize: 'cover, cover, 200px 200px, 400px 400px',
-      backgroundRepeat: 'no-repeat, no-repeat, repeat, repeat',
-      backgroundPosition: 'center, center, 0 0, 100px 100px'
-    }}>
+    <div ref={wrapperRef} className="absolute inset-0 z-0 m-0 p-0">
       <Globe
         ref={globeEl}
         // higher-resolution base map to reduce blur (large image; may increase load time)
         // progressive image (low-res -> high-res)
         globeImageUrl={globeImage}
+        bumpImageUrl={bumpImage}
+        showAtmosphere={true}
+        atmosphereColor="#6bbcff"
+        atmosphereAltitude={0.15}
         // subtle cloud layer for realism (optional)
         backgroundColor="rgba(0,0,0,0)"
-        pointsData={points}
+        pointsData={[...points, ...stormPath]}
         pointLat="lat"
         pointLng="lng"
-        pointAltitude={(d: any) => 0.01 + (d.size / 50)}
-        pointRadius={(d: any) => d.size / 2}
+        // Remove vertical cylinder look: keep points flat on the globe
+        pointAltitude={() => 0}
+        pointRadius={(d: any) => Math.max(0.6, d.size / 2)}
         pointColor={(d: any) => d.color}
-        onPointClick={(d: any) => {
-          // center on click
-          if (globeEl.current) globeEl.current.pointOfView({ lat: d.lat, lng: d.lng, altitude: 1.5 }, 600);
+        onPointClick={async (d: any) => {
+          // center on click & fetch weather
+          if (globeEl.current) globeEl.current.pointOfView({ lat: d.lat, lng: d.lng, altitude: 1.4 }, 600);
+          setLastCoord({ lat: d.lat, lng: d.lng, label: d.label });
+          try {
+            const w = await fetchWeatherForPoint(d.lat, d.lng);
+            setPointWeather({ coord: { lat: d.lat, lng: d.lng, label: d.label }, data: w, storm: isStormForecast(w) });
+          } catch {}
         }}
         onGlobeClick={(evt: any) => {
           // evt: { lat, lng, clientX, clientY }
@@ -402,9 +653,76 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
           }
         }}
         polygonsTransitionDuration={300}
-        width={globeSize}
-        height={globeSize}
+        width={globeW}
+        height={globeH}
       />
+      {/* Point weather overlay */}
+      {pointWeather && (
+        <div className="absolute right-4 top-4 z-50 w-80">
+          <Card>
+            <div className="text-sm text-gray-200">
+              <div className="font-semibold text-lg text-gray-100">{pointWeather.coord.label || 'Location'}</div>
+              <div className="text-xs text-gray-300">{pointWeather.coord.lat.toFixed(2)}, {pointWeather.coord.lng.toFixed(2)}</div>
+              {overlayError && (
+                <div className="mt-2 text-xs text-red-400">{overlayError}</div>
+              )}
+              {overlayMode === 'current' && pointWeather.data?.current && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="text-xl">
+                      {(() => {
+                        const code = pointWeather.data.current.weather_code;
+                        const [icon] = weatherCodeToIcon(typeof code === 'number' ? code : null);
+                        return icon;
+                      })()}
+                    </div>
+                    <div className="text-xs text-gray-300">Current conditions</div>
+                  </div>
+                  <div>Temp: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.temperature_2m)}°C</span></div>
+                  <div>Wind: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.wind_speed_10m ?? 0)} m/s</span></div>
+                  <div>Gusts: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.wind_gusts_10m ?? 0)} m/s</span></div>
+                  <div>Precip: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.precipitation ?? 0)} mm</span></div>
+                </div>
+              )}
+              {overlayMode === 'hourly' && pointWeather.data?.hourly && Array.isArray(pointWeather.data.hourly.temperature_2m) && (
+                <div className="mt-3">
+                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Next hours</div>
+                  <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+                    {pointWeather.data.hourly.temperature_2m.slice(0,6).map((t:number, i:number) => (
+                      <div key={i} className="p-1 rounded bg-gray-800/40 border border-white/10">
+                        <div className="font-medium text-gray-100">{Math.round(t)}°C</div>
+                        <div className="text-[10px] text-gray-300">Gust {Math.round((pointWeather.data.hourly.wind_gusts_10m?.[i] ?? 0))} m/s</div>
+                        <div className="text-[10px] text-gray-300">Precip {Math.round((pointWeather.data.hourly.precipitation?.[i] ?? 0))} mm</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {overlayMode === 'daily' && pointWeather.data?.daily && Array.isArray(pointWeather.data.daily.temperature_2m_max) && (
+                <div className="mt-3">
+                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Next days</div>
+                  <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+                    {pointWeather.data.daily.temperature_2m_max.slice(0,3).map((max:number, i:number) => {
+                      const min = pointWeather.data.daily.temperature_2m_min?.[i];
+                      const code = pointWeather.data.daily.weather_code?.[i];
+                      const [icon] = weatherCodeToIcon(typeof code === 'number' ? code : null);
+                      return (
+                        <div key={i} className="p-1 rounded bg-gray-800/40 border border-white/10 text-center">
+                          <div className="text-xl">{icon}</div>
+                          <div className="font-medium text-gray-100">{Math.round(max)}°/{Math.round(min ?? max)}°</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="mt-3">
+                <button onClick={() => setPointWeather(null)} className="mt-2 w-full glass-button text-white py-2">Close</button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Polar overlay when user clicks near the poles */}
       {polarInfo && (
@@ -418,7 +736,7 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                 </div>
                 <button
                   onClick={() => { setPolarInfo(null); }}
-                  className="ml-4 inline-flex items-center justify-center h-8 w-8 rounded bg-gray-800 text-gray-200 hover:bg-gray-700"
+                  className="ml-4 inline-flex items-center justify-center h-8 w-8 rounded glass-button"
                   aria-label="Close polar overlay"
                 >✕</button>
               </div>

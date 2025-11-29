@@ -13,7 +13,6 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
-  isOpen,
   onClose,
   selectedLocation,
   climateData,
@@ -51,6 +50,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button 
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-gray-700 transition-colors"
+            aria-label="Close sidebar"
+            title="Close sidebar"
           >
             <X className="w-5 h-5" />
           </button>

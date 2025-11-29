@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Remove default margins and padding */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 /* Custom Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 8px;
@@ -28,6 +43,18 @@
 
 /* Firefox scrollbar styling */
 html {
-  scrollbar-width: thin;
-  scrollbar-color: #3b82f6 #1f2937;
+  /* Custom scrollbar properties for Firefox removed for cross-browser compatibility */
+}
+
+/* Clean UI component primitives */
+@layer components {
+  .glass-panel {
+    @apply rounded-xl border border-white/10 bg-gray-900/70 dark:bg-gray-800/70 backdrop-blur-md shadow-lg;
+  }
+  .glass-button {
+    @apply rounded-md bg-gray-800/60 hover:bg-gray-800 text-gray-200 dark:bg-gray-800/70 dark:hover:bg-gray-700 transition;
+  }
+  .section-title {
+    @apply text-xs uppercase tracking-wide text-gray-300 dark:text-gray-200;
+  }
 }

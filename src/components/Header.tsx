@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Menu, Globe, Thermometer, AlertTriangle, Leaf } from 'lucide-react';
+import { Menu, Thermometer, AlertTriangle, Leaf } from 'lucide-react';
 import Button from './ui/Button';
 
 interface HeaderProps {
@@ -30,7 +30,7 @@ const Header: React.FC<HeaderProps> = ({ selectedDataType, onDataTypeChange, onM
           </Button>
           
           <div className="flex items-center space-x-3">
-            <Globe className="w-8 h-8 text-blue-400" />
+            <img src='/Group 2.png' alt="Logo" className="w-8 h-8" />
             <div>
               <h1 className="text-xl font-bold">GEOSTORM</h1>
               <p className="text-sm text-gray-400">Real-time environmental monitoring</p>

@@ -92,7 +92,7 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
         {stats.map((stat, index) => (
           <motion.div
             key={index}
-            className={`${stat.bgColor} backdrop-blur-md rounded-md p-2 border border-gray-600/50 min-w-[140px] cursor-pointer hover:scale-102 transition-all shadow-sm`}
+            className={`glass-panel p-2 min-w-[140px] cursor-pointer hover:scale-102 transition-all shadow-sm border ${stat.bgColor.replace('bg-', 'border-')}`}
             initial={{ opacity: 0, x: 100 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.2 }}
@@ -121,7 +121,7 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
             onClick={() => setSelectedStat(null)}
           >
             <motion.div
-              className="bg-gray-800 rounded-xl p-6 max-w-lg w-full border border-gray-600 max-h-[80vh] overflow-y-auto"
+              className="glass-panel p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
@@ -131,7 +131,9 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
                 <h3 className="text-xl font-bold text-white">{selectedStat.details.title}</h3>
                 <button
                   onClick={() => setSelectedStat(null)}
-                  className="p-2 rounded-lg hover:bg-gray-700 transition-colors"
+                  className="p-2 rounded-lg glass-button"
+                  aria-label="Close"
+                  title="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -141,7 +143,7 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 {selectedStat.details.breakdown.map((item: any, index: number) => (
-                  <div key={index} className="bg-gray-700/50 p-3 rounded-lg">
+                  <div key={index} className="bg-gray-800/40 p-3 rounded-lg border border-white/10 rounded">
                     <p className="text-sm text-gray-400">{item.label}</p>
                     <p className={`text-lg font-bold ${selectedStat.color}`}>{item.value}</p>
                   </div>
@@ -152,7 +154,7 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
                 <h4 className="font-semibold text-white">Recent Data Points</h4>
                 <div className="max-h-40 overflow-y-auto space-y-2">
                   {selectedStat.details.data.slice(0, 5).map((item: any, index: number) => (
-                    <div key={index} className="bg-gray-700/30 p-2 rounded text-sm">
+                    <div key={index} className="bg-gray-800/30 p-2 rounded text-sm border border-white/10">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300">{item.location || item.type}</span>
                         <span className={selectedStat.color}>
@@ -171,7 +173,7 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
 
               <button
                 onClick={() => setSelectedStat(null)}
-                className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors"
+              className="mt-6 w-full glass-button text-white py-2 px-4"
               >
                 Close Details
               </button>

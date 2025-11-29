@@ -48,6 +48,8 @@ const AlertSystem: React.FC<AlertSystemProps> = ({ disasters }) => {
               <button
                 onClick={() => dismissAlert(alert.id)}
                 className="text-red-300 hover:text-white transition-colors"
+                aria-label="Dismiss alert"
+                title="Dismiss alert"
               >
                 <X className="w-4 h-4" />
               </button>
