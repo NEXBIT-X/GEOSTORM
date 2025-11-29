@@ -122,8 +122,8 @@ function App() {
       {/* Google Maps attribution removed from visible UI */}
 
       {/* Footer removed for full-screen experience */}
-      {/* Award badge bottom-right */}
-      <div className="fixed bottom-4 right-4 z-50">
+      {/* Award badge bottom-left */}
+      <div className="fixed bottom-4 left-4 z-50">
         <div className="px-4 py-2 rounded-md bg-blue-600/20 border border-blue-500 text-[11px] font-semibold uppercase tracking-wide text-blue-200 backdrop-blur-sm shadow-lg">
           Google Maps Platform Winner
         </div>

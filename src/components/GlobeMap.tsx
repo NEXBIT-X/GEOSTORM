@@ -89,6 +89,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   const fallbackBump = 'https://threejs.org/examples/textures/earthbump1k.jpg';
   const [bumpImage, setBumpImage] = useState<string>(fallbackBump);
   const [polarInfo, setPolarInfo] = useState<{ lat: number; lng: number; current?: any | null; daily?: any | null; loading?: boolean } | null>(null);
+  
+  // Minimize/Expand states for corner dialogs
+  const [isWeatherMinimized, setIsWeatherMinimized] = useState(false);
+  const [isCountryMinimized, setIsCountryMinimized] = useState(false);
+  
+  // Auto-rotation control
+  const [isRotating, setIsRotating] = useState(true);
 
   // simple in-memory cache for weather by key (iso or name)
   const weatherCacheRef = useRef<Map<string, any>>(new Map());
@@ -288,13 +295,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       if (!globeEl.current) return;
       const controls = globeEl.current.controls && globeEl.current.controls();
       if (controls) {
-        controls.autoRotate = true;
+        controls.autoRotate = isRotating;
         controls.autoRotateSpeed = 0.25; // tune for realistic slow rotation
       }
     } catch (e) {
       // ignore if controls aren't available yet
     }
-  }, []);
+  }, [isRotating]);
 
   // Make globe fill the viewport completely
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -661,8 +668,28 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
         <div className="absolute right-4 top-4 z-50 w-80">
           <Card>
             <div className="text-sm text-gray-200">
-              <div className="font-semibold text-lg text-gray-100">{pointWeather.coord.label || 'Location'}</div>
-              <div className="text-xs text-gray-300">{pointWeather.coord.lat.toFixed(2)}, {pointWeather.coord.lng.toFixed(2)}</div>
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="font-semibold text-lg text-gray-100">{pointWeather.coord.label || 'Location'}</div>
+                  <div className="text-xs text-gray-300">{pointWeather.coord.lat.toFixed(2)}, {pointWeather.coord.lng.toFixed(2)}</div>
+                </div>
+                <div className="flex gap-1">
+                  <button 
+                    onClick={() => setIsWeatherMinimized(!isWeatherMinimized)}
+                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
+                    aria-label={isWeatherMinimized ? "Expand" : "Minimize"}
+                  >
+                    {isWeatherMinimized ? '□' : '−'}
+                  </button>
+                  <button
+                    onClick={() => setPointWeather(null)}
+                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
+                    aria-label="Close"
+                  >✕</button>
+                </div>
+              </div>
+              {!isWeatherMinimized && (
+                <>
               {overlayError && (
                 <div className="mt-2 text-xs text-red-400">{overlayError}</div>
               )}
@@ -716,9 +743,8 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                   </div>
                 </div>
               )}
-              <div className="mt-3">
-                <button onClick={() => setPointWeather(null)} className="mt-2 w-full glass-button text-white py-2">Close</button>
-              </div>
+                </>
+              )}
             </div>
           </Card>
         </div>
@@ -783,10 +809,28 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
 
       {/* Configure renderer pixel ratio and texture anisotropy once globe is mounted */}
       {selectedCountry && (
-        <div className="absolute left-4 bottom-4 z-50 w-80">
+        <div className="absolute right-4 bottom-4 z-50 w-80">
           <Card>
             <div className="text-sm text-gray-200">
-              <div className="font-semibold text-lg">{selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || 'Country'}</div>
+              <div className="flex justify-between items-start mb-2">
+                <div className="font-semibold text-lg flex-1">{selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || 'Country'}</div>
+                <div className="flex gap-1">
+                  <button 
+                    onClick={() => setIsCountryMinimized(!isCountryMinimized)}
+                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
+                    aria-label={isCountryMinimized ? "Expand" : "Minimize"}
+                  >
+                    {isCountryMinimized ? '□' : '−'}
+                  </button>
+                  <button
+                    onClick={() => setSelectedCountry(null)}
+                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
+                    aria-label="Close"
+                  >✕</button>
+                </div>
+              </div>
+              {!isCountryMinimized && (
+                <>
               {!countryDetails && (
                 <div className="mt-2 text-xs text-gray-400">Loading country details…</div>
               )}
@@ -839,10 +883,33 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                   </div>
                 </div>
               )}
+                </>
+              )}
             </div>
           </Card>
         </div>
       )}
+
+      {/* Rotation control button - bottom left */}
+      <div className="absolute left-4 bottom-20 z-50">
+        <button
+          onClick={() => setIsRotating(!isRotating)}
+          className="px-4 py-2 rounded-md bg-gray-800/70 hover:bg-gray-700 border border-gray-600 text-sm text-gray-200 backdrop-blur-sm shadow-lg transition flex items-center gap-2"
+          aria-label={isRotating ? "Stop rotation" : "Start rotation"}
+        >
+          {isRotating ? (
+            <>
+              <span className="text-lg">⏸</span>
+              <span>Stop Rotation</span>
+            </>
+          ) : (
+            <>
+              <span className="text-lg">▶</span>
+              <span>Start Rotation</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 };

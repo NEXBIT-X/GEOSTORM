@@ -11,6 +11,7 @@ interface Props {
 }
 
 const ControlSidebar: React.FC<Props> = ({ selectedDataType, onDataTypeChange, onApiAction, onSearchLocation, searching = false, searchError }) => {
+  const [isMinimized, setIsMinimized] = React.useState(false);
   const item = (key: Props['selectedDataType'], label: string, Icon: any) => (
     <button
       onClick={() => onDataTypeChange(key)}
@@ -34,8 +35,17 @@ const ControlSidebar: React.FC<Props> = ({ selectedDataType, onDataTypeChange, o
     <aside className="fixed left-4 top-4 z-50 w-56 space-y-3 p-3 glass-panel">
       <div className="flex items-center gap-2 mb-2">
         <img src="/Group 2.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
-        <div className="font-semibold text-sm text-white dark:text-gray-100">GEOSTORM</div>
+        <div className="font-semibold text-sm text-white dark:text-gray-100 flex-1">GEOSTORM</div>
+        <button 
+          onClick={() => setIsMinimized(!isMinimized)}
+          className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
+          aria-label={isMinimized ? "Expand" : "Minimize"}
+        >
+          {isMinimized ? '□' : '−'}
+        </button>
       </div>
+      {!isMinimized && (
+        <>
       <div className="section-title">Data Type</div>
       {item('temperature', 'Temperature', Thermometer)}
       {item('disasters', 'Disasters', AlertTriangle)}
@@ -61,8 +71,8 @@ const ControlSidebar: React.FC<Props> = ({ selectedDataType, onDataTypeChange, o
         <button type="submit" className="w-full px-3 py-2 rounded-md text-sm bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50" disabled={searching}>{searching ? 'Searching...' : 'Search'}</button>
         {searchError && <div className="text-[11px] text-red-400">{searchError}</div>}
       </form>
-
-      
+        </>
+      )}
     </aside>
   );
 };
