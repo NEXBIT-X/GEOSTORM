@@ -891,23 +891,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       )}
 
       {/* Rotation control button - bottom left */}
-      <div className="absolute left-4 bottom-20 z-50">
+      <div className="absolute left-4 bottom-16 z-[60]">
         <button
           onClick={() => setIsRotating(!isRotating)}
-          className="px-4 py-2 rounded-md bg-gray-800/70 hover:bg-gray-700 border border-gray-600 text-sm text-gray-200 backdrop-blur-sm shadow-lg transition flex items-center gap-2"
+          className="w-10 h-10 rounded-md bg-gray-900/90 hover:bg-gray-800 border border-blue-500/50 text-blue-200 backdrop-blur-sm shadow-xl transition-all flex items-center justify-center"
           aria-label={isRotating ? "Stop rotation" : "Start rotation"}
         >
-          {isRotating ? (
-            <>
-              <span className="text-lg">⏸</span>
-              <span>Stop Rotation</span>
-            </>
-          ) : (
-            <>
-              <span className="text-lg">▶</span>
-              <span>Start Rotation</span>
-            </>
-          )}
+          <span className="text-xl">{isRotating ? '⏸' : '▶'}</span>
         </button>
       </div>
     </div>
