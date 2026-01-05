@@ -82,10 +82,11 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   const [countryDetails, setCountryDetails] = useState<any | null>(null);
   const [countryWeather, setCountryWeather] = useState<any | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  // progressive globe image: low-res then swap to high-res
-  const lowResGlobe = './8081_earthmap10k.jpg';
-  const highResGlobe = './8081_earthmap10k.jpg';
+  // progressive globe image: served from `public/` so use absolute paths for Vercel
+  const lowResGlobe = '/8081_earthmap10k.jpg';
+  const highResGlobe = '/8081_earthmap10k.jpg';
   const [globeImage, setGlobeImage] = useState<string>(highResGlobe);
+  // local bump map in `public/textures` (fallback to remote if missing)
   const localBump = '/textures/earth-bump.jpg';
   const fallbackBump = 'https://threejs.org/examples/textures/earthbump1k.jpg';
   const [bumpImage, setBumpImage] = useState<string>(fallbackBump);
