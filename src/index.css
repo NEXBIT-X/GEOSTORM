@@ -15,6 +15,23 @@ html, body, #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* Prevent mobile browser zoom on input focus */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Disable pull-to-refresh on mobile */
+body {
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent iOS Safari bounce effect */
+html, body {
+  position: fixed;
+  overflow: hidden;
 }
 
 /* Custom Scrollbar Styling */
@@ -49,12 +66,54 @@ html {
 /* Clean UI component primitives */
 @layer components {
   .glass-panel {
-    @apply rounded-xl border border-white/10 bg-gray-900/70 dark:bg-gray-800/70 backdrop-blur-md shadow-lg;
+    @apply rounded-xl border border-white/10 bg-gray-900/90 backdrop-blur-md shadow-lg;
   }
   .glass-button {
-    @apply rounded-md bg-gray-800/60 hover:bg-gray-800 text-gray-200 dark:bg-gray-800/70 dark:hover:bg-gray-700 transition;
+    @apply rounded-md bg-gray-800/60 hover:bg-gray-800 text-gray-200 transition touch-manipulation;
   }
   .section-title {
-    @apply text-xs uppercase tracking-wide text-gray-300 dark:text-gray-200;
+    @apply text-xs uppercase tracking-wide text-gray-300;
+  }
+}
+
+/* Touch-friendly button sizing for mobile */
+@media (max-width: 768px) {
+  button, a, input, select {
+    min-height: 44px; /* iOS recommended touch target size */
+    touch-action: manipulation;
+  }
+  
+  input, select, textarea {
+    font-size: 16px; /* Prevent iOS zoom on focus */
+  }
+}
+
+/* Landscape orientation optimizations */
+@media (max-width: 768px) and (orientation: landscape) {
+  .glass-panel {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Safe area insets for notched devices (iPhone X+) */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Prevent text selection on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  
+  input, textarea {
+    user-select: text;
   }
 }

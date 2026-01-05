@@ -11,7 +11,7 @@ const VARIANT_CLASSES: Record<string, string> = {
 };
 
 const Button: React.FC<ButtonProps> = ({ variant = 'default', className = '', children, ...props }) => {
-  const classes = `inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition ${VARIANT_CLASSES[variant]} ${className}`;
+  const classes = `inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition touch-manipulation ${VARIANT_CLASSES[variant]} ${className}`;
   return (
     <button {...props} className={classes}>
       {children}

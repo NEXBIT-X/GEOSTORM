@@ -1,17 +1,16 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Menu, Thermometer, AlertTriangle, Leaf } from 'lucide-react';
+import { Menu, AlertTriangle, Leaf } from 'lucide-react';
 import Button from './ui/Button';
 
 interface HeaderProps {
-  selectedDataType: 'temperature' | 'disasters' | 'environmental';
-  onDataTypeChange: (type: 'temperature' | 'disasters' | 'environmental') => void;
+  selectedDataType: 'disasters' | 'environmental';
+  onDataTypeChange: (type: 'disasters' | 'environmental') => void;
   onMenuToggle: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ selectedDataType, onDataTypeChange, onMenuToggle }) => {
   const dataTypes = [
-    { key: 'temperature', label: 'Climate Data', icon: Thermometer },
     { key: 'disasters', label: 'Disasters', icon: AlertTriangle },
     { key: 'environmental', label: 'Environmental', icon: Leaf }
   ];
@@ -44,7 +43,7 @@ const Header: React.FC<HeaderProps> = ({ selectedDataType, onDataTypeChange, onM
             return (
               <motion.div key={type.key} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                 <Button
-                  onClick={() => onDataTypeChange(type.key as 'temperature' | 'disasters' | 'environmental')}
+                  onClick={() => onDataTypeChange(type.key as 'disasters' | 'environmental')}
                   variant={selectedDataType === type.key ? 'primary' : 'ghost'}
                   className="flex items-center space-x-2 px-4 py-2"
                 >

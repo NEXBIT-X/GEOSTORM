@@ -1,15 +1,17 @@
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
+import { fetchFEMADisasters, getFEMADisasterCoords, getFEMASeverity } from './fema';
 
 // Fetch live disaster and environmental data from public APIs (no API key required)
 // - EONET (NASA) for natural events: https://eonet.gsfc.nasa.gov
 // - USGS for earthquakes: https://earthquake.usgs.gov
 // - OpenAQ for recent air quality: https://api.openaq.org
-// - Open-Meteo for current weather (temperature) per-location: https://open-meteo.com
+// (Open-Meteo integration removed)
+// - FEMA OpenFEMA for disaster declarations: https://www.fema.gov/about/openfema/api
 
 const EONET_URL = 'https://eonet.gsfc.nasa.gov/api/v3/events';
 const USGS_EQ_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson';
 const OPENAQ_URL = 'https://api.openaq.org/v2/latest';
-const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
+// Open-Meteo removed: no URL configured
 
 async function fetchEonetDisasters(): Promise<DisasterEvent[]> {
   try {
@@ -93,6 +95,30 @@ async function fetchUSGSEarthquakes(): Promise<DisasterEvent[]> {
   }
 }
 
+async function fetchFEMADisastersAsEvents(): Promise<DisasterEvent[]> {
+  try {
+    const femaDisasters = await fetchFEMADisasters(50, 90); // Last 90 days, up to 50 records
+    return femaDisasters.map((disaster, idx) => {
+      const coords = getFEMADisasterCoords(disaster);
+      if (!coords) return null;
+      
+      return {
+        id: `fema-${disaster.disasterNumber}`,
+        type: disaster.incidentType || 'Disaster',
+        location: `${disaster.designatedArea || disaster.state}, ${disaster.state}`,
+        lat: coords.lat,
+        lng: coords.lng,
+        severity: getFEMASeverity(disaster.incidentType),
+        timestamp: disaster.declarationDate || new Date().toISOString(),
+        description: `${disaster.disasterName} - ${disaster.declarationType}`
+      } as DisasterEvent;
+    }).filter(d => d !== null) as DisasterEvent[];
+  } catch (e) {
+    console.error('FEMA fetch error', e);
+    return [];
+  }
+}
+
 async function fetchOpenAQ(limit = 100): Promise<EnvironmentalData[]> {
   try {
     const url = `${OPENAQ_URL}?limit=${limit}&page=1&offset=0&sort=desc&order_by=lastUpdated`;
@@ -124,49 +150,24 @@ async function fetchOpenAQ(limit = 100): Promise<EnvironmentalData[]> {
   }
 }
 
-async function fetchOpenMeteoForPoints(points: { lat: number; lng: number; id?: string; location?: string }[]): Promise<ClimateData[]> {
-  try {
-    const promoted: ClimateData[] = [];
-    const requests = points.slice(0, 40).map(async (p, idx) => {
-      const url = `${OPEN_METEO_URL}?latitude=${p.lat}&longitude=${p.lng}&current_weather=true`;
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const json = await res.json();
-      const cw = json.current_weather;
-      if (!cw) return null;
-      return {
-        id: `omet-${p.id || idx}`,
-        location: p.location || `Point ${idx}`,
-        lat: p.lat,
-        lng: p.lng,
-        temperature: Math.round((cw.temperature ?? 0) * 10) / 10,
-        humidity: Math.round((cw.relativehumidity ?? 50)),
-        windSpeed: Math.round((cw.windspeed ?? 0) * 10) / 10,
-        timestamp: new Date().toISOString(),
-      } as ClimateData;
-    });
-
-    const results = await Promise.all(requests);
-    results.forEach(r => { if (r) promoted.push(r); });
-    return promoted;
-  } catch (e) {
-    console.error('Open-Meteo fetch error', e);
-    return [];
-  }
-}
+// Open-Meteo climate sampling removed to avoid external dependency; returning empty climate data.
 
 export async function fetchLiveData(): Promise<{ disasters: DisasterEvent[]; environmental: EnvironmentalData[]; climate: ClimateData[] }> {
-  // Parallel fetch
-  const [eonet, usgs, openaq] = await Promise.all([fetchEonetDisasters(), fetchUSGSEarthquakes(), fetchOpenAQ(120)]);
+  // Parallel fetch including FEMA
+  const [eonet, usgs, fema, openaq] = await Promise.all([
+    fetchEonetDisasters(), 
+    fetchUSGSEarthquakes(), 
+    fetchFEMADisastersAsEvents(),
+    fetchOpenAQ(120)
+  ]);
 
   // Merge disaster lists (simple concat, dedupe by id)
   const disastersMap = new Map<string, DisasterEvent>();
-  [...eonet, ...usgs].forEach(d => disastersMap.set(d.id, d));
+  [...eonet, ...usgs, ...fema].forEach(d => disastersMap.set(d.id, d));
   const disasters = Array.from(disastersMap.values());
 
-  // For climate, sample temperatures for top OpenAQ locations
-  const points = openaq.slice(0, 40).map(p => ({ lat: p.lat, lng: p.lng, id: p.id, location: p.location }));
-  const climate = await fetchOpenMeteoForPoints(points);
+  // Climate sampling via Open-Meteo has been removed; return empty climate array
+  const climate: ClimateData[] = [];
 
   return { disasters, environmental: openaq, climate };
 }

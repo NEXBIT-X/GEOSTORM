@@ -30,3 +30,25 @@ export interface EnvironmentalData {
   pollutionIndex: number;
   timestamp: string;
 }
+
+// Public resilience / infrastructure research types
+export interface InfrastructureSite {
+  id: string;
+  name: string;
+  type: 'Hospital' | 'Power Plant' | 'Port' | 'Bridge' | 'Shelter';
+  lat: number;
+  lng: number;
+  status: 'Operational' | 'Degraded' | 'Offline';
+  lastUpdated: string;
+}
+
+export interface HazardEvent {
+  id: string;
+  title: string;
+  category: 'Storm' | 'Flood' | 'Wildfire' | 'Earthquake';
+  lat: number;
+  lng: number;
+  intensity: number; // scale 0-10
+  detectedAt: string;
+  source: string; // e.g. NOAA, NASA FIRMS (mocked)
+}

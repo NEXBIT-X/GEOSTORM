@@ -143,7 +143,7 @@ const StatsOverlay: React.FC<StatsOverlayProps> = ({
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 {selectedStat.details.breakdown.map((item: any, index: number) => (
-                  <div key={index} className="bg-gray-800/40 p-3 rounded-lg border border-white/10 rounded">
+                  <div key={index} className="bg-gray-800/40 p-3 rounded-lg border border-white/10">
                     <p className="text-sm text-gray-400">{item.label}</p>
                     <p className={`text-lg font-bold ${selectedStat.color}`}>{item.value}</p>
                   </div>

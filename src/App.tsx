@@ -1,32 +1,72 @@
 import { useState, useEffect } from 'react';
 import MapContainer from './components/MapContainer';
 import ControlSidebar from './components/ControlSidebar';
+import ResilienceOverlayPanel from './components/ResilienceOverlayPanel';
 import { ClimateData, DisasterEvent, EnvironmentalData } from './types';
 import { climateAPI } from './services/api';
+import { searchIndianLocations, fetchIMDWeather, IMDWeatherData } from './services/indiaWeather';
 
 function App() {
-  const [selectedDataType, setSelectedDataType] = useState<'temperature' | 'disasters' | 'environmental'>('temperature');
-  const [climateData, setClimateData] = useState<ClimateData[]>([]);
+  const [selectedDataType, setSelectedDataType] = useState<'disasters' | 'environmental'>('disasters');
+  const [climateData, setClimateData] = useState<ClimateData[]>([]); // climate data disabled; app focuses on disasters + environmental
   const [disasters, setDisasters] = useState<DisasterEvent[]>([]);
   const [environmentalData, setEnvironmentalData] = useState<EnvironmentalData[]>([]);
-  const [apiAction, setApiAction] = useState<null | 'openmeteo_current' | 'openmeteo_hourly' | 'openmeteo_daily'>(null);
+  // Open‑Meteo actions removed
   const [isLoading, setIsLoading] = useState(true);
   const [focusCoord, setFocusCoord] = useState<{ lat: number; lng: number; label?: string } | null>(null);
+  const [districtWeather, setDistrictWeather] = useState<IMDWeatherData | null>(null);
+  const [districtWeatherLoading, setDistrictWeatherLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [infraHazardsEnabled, setInfraHazardsEnabled] = useState(false);
+  const [overlayLoading, setOverlayLoading] = useState(false);
+  const [overlayError, setOverlayError] = useState<string | null>(null);
+  const [overlayData, setOverlayData] = useState<{ hazards: number; infrastructure: number } | null>(null);
+
+  // Fetch overlay data when enabled
+  useEffect(() => {
+    if (!infraHazardsEnabled) {
+      setOverlayData(null);
+      setOverlayError(null);
+      return;
+    }
+    
+    let mounted = true;
+    const loadOverlayData = async () => {
+      setOverlayLoading(true);
+      setOverlayError(null);
+      try {
+        const { fetchLiveOverlay } = await import('./services/hazards');
+        const data = await fetchLiveOverlay();
+        if (mounted) {
+          const hazards = data.filter(d => d.kind === 'hazard').length;
+          const infrastructure = data.filter(d => d.kind === 'infrastructure').length;
+          setOverlayData({ hazards, infrastructure });
+        }
+      } catch (error: any) {
+        if (mounted) {
+          setOverlayError('Failed to load overlay data');
+        }
+      } finally {
+        if (mounted) setOverlayLoading(false);
+      }
+    };
+    
+    loadOverlayData();
+    return () => { mounted = false; };
+  }, [infraHazardsEnabled]);
 
   useEffect(() => {
     // Load initial data and check API status
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const [climateResult, disasterResult, environmentalResult] = await Promise.all([
-          climateAPI.getClimateData({ limit: 50 }),
+        const [disasterResult, environmentalResult] = await Promise.all([
           climateAPI.getDisasters({ limit: 50 }),
           climateAPI.getEnvironmentalData({ limit: 50 })
         ]);
 
-        setClimateData(climateResult);
+        // climate data intentionally not fetched; keep empty
         setDisasters(disasterResult);
         setEnvironmentalData(environmentalResult);
       } catch (error) {
@@ -77,19 +117,31 @@ function App() {
       <ControlSidebar
         selectedDataType={selectedDataType}
         onDataTypeChange={setSelectedDataType}
-        onApiAction={(a) => setApiAction(a)}
         onSearchLocation={async (query) => {
           setSearching(true);
           setSearchError(null);
           try {
-            const resp = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`);
+            // First try Indian locations
+            const indianResults = searchIndianLocations(query);
+            if (indianResults.length > 0) {
+              const first = indianResults[0];
+              setFocusCoord({ 
+                lat: first.coords.lat, 
+                lng: first.coords.lng, 
+                label: `${first.district}, ${first.state}` 
+              });
+              setSearching(false);
+              return;
+            }
+            // Fallback to Nominatim (OpenStreetMap) for global geocoding
+            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1`, { headers: { 'User-Agent': 'GEOSTORM/1.0 (contact@yourdomain.example)' } });
             if (!resp.ok) throw new Error('Request failed');
-            const data = await resp.json();
-            if (data && Array.isArray(data.results) && data.results.length) {
-              const r = data.results[0];
-              const lat = r.latitude;
-              const lon = r.longitude;
-              const label = [r.name, r.country].filter(Boolean).join(', ');
+            const results = await resp.json();
+            if (Array.isArray(results) && results.length) {
+              const r = results[0];
+              const lat = Number(r.lat);
+              const lon = Number(r.lon);
+              const label = (r.display_name || '').split(',')[0] || r.display_name;
               setFocusCoord({ lat, lng: lon, label });
             } else {
               setSearchError('No results found');
@@ -98,6 +150,33 @@ function App() {
             setSearchError('Search failed');
           } finally {
             setSearching(false);
+          }
+        }}
+        onSelectLocation={(coord) => {
+          setFocusCoord(coord);
+        }}
+        onIndiaLocationSelect={async (state, district, coords) => {
+          // Focus the map on the selected district
+          setFocusCoord({
+            lat: coords.lat,
+            lng: coords.lng,
+            label: `${district}, ${state}`
+          });
+
+          // Fetch district weather (IMD / API Setu placeholder)
+          try {
+            setDistrictWeatherLoading(true);
+            const data = await fetchIMDWeather(state, district);
+            if (data && data.length > 0) {
+              setDistrictWeather(data[0]);
+            } else {
+              setDistrictWeather(null);
+            }
+          } catch (e) {
+            console.error('Failed to fetch district weather', e);
+            setDistrictWeather(null);
+          } finally {
+            setDistrictWeatherLoading(false);
           }
         }}
         searching={searching}
@@ -110,11 +189,18 @@ function App() {
           climateData={climateData}
           disasters={disasters}
           environmentalData={environmentalData}
-          apiAction={apiAction || undefined}
-          onApiConsumed={() => setApiAction(null)}
           focusCoord={focusCoord || undefined}
+          infraHazardsEnabled={infraHazardsEnabled}
         />
       </div>
+
+      <ResilienceOverlayPanel 
+        enabled={infraHazardsEnabled} 
+        onToggle={setInfraHazardsEnabled}
+        loading={overlayLoading}
+        error={overlayError}
+        data={overlayData}
+      />
 
       {/* API Status indicator (hidden) */}
       {/* Removed display of "Mock Data" badge to keep UI clean per requirements */}
@@ -122,8 +208,8 @@ function App() {
       {/* Google Maps attribution removed from visible UI */}
 
       {/* Footer removed for full-screen experience */}
-      {/* Award badge bottom-left */}
-      <div className="fixed bottom-4 left-4 z-50">
+      {/* Award badge bottom-right */}
+      <div className="fixed bottom-4 right-4 z-50">
         <div className="px-4 py-2 rounded-md bg-blue-600/20 border border-blue-500 text-[11px] font-semibold uppercase tracking-wide text-blue-200 backdrop-blur-sm shadow-lg">
           Google Maps Platform Winner
         </div>

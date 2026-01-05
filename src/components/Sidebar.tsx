@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, TrendingUp, AlertCircle, Leaf, MapPin, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, TrendingUp, AlertCircle, Leaf, MapPin, ChevronDown, ChevronRight, Globe } from 'lucide-react';
+import { fetchWeatherForPoint, isStormForecast } from '../services/openMeteo';
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
+import { INDIAN_STATES, getDistrictsByState, DISTRICT_COORDS } from '../services/indiaWeather';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -10,6 +12,7 @@ interface SidebarProps {
   climateData: ClimateData[];
   disasters: DisasterEvent[];
   environmentalData: EnvironmentalData[];
+  onIndiaLocationSelect?: (state: string, district: string, coords: { lat: number; lng: number }) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -17,10 +20,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   selectedLocation,
   climateData,
   disasters,
-  environmentalData
+  environmentalData,
+  onIndiaLocationSelect
 }) => {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['climate', 'disasters', 'environmental']));
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [selectedState, setSelectedState] = useState<string>('');
+  const [selectedDistrict, setSelectedDistrict] = useState<string>('');
+  const [showIndiaSelector, setShowIndiaSelector] = useState(false);
 
   const toggleSection = (section: string) => {
     const newExpanded = new Set(expandedSections);
@@ -36,6 +43,59 @@ const Sidebar: React.FC<SidebarProps> = ({
     setSelectedItem(item);
   };
 
+  const handleStateChange = (stateName: string) => {
+    setSelectedState(stateName);
+    setSelectedDistrict('');
+  };
+
+  const handleDistrictChange = (districtName: string) => {
+    setSelectedDistrict(districtName);
+    if (selectedState && districtName && onIndiaLocationSelect) {
+      const coords = DISTRICT_COORDS[districtName];
+      if (coords) {
+        onIndiaLocationSelect(selectedState, districtName, coords);
+      }
+    }
+  };
+
+  const districts = selectedState ? getDistrictsByState(selectedState) : [];
+
+  const [overviewWeather, setOverviewWeather] = useState<any | null>(null);
+  const [overviewWeatherLoading, setOverviewWeatherLoading] = useState(false);
+
+  // Fetch weather for the selected location (if coordinates available)
+  React.useEffect(() => {
+    let mounted = true;
+    setOverviewWeather(null);
+    setOverviewWeatherLoading(false);
+    if (!selectedLocation) return;
+    (async () => {
+      try {
+        // Determine coordinates on several possible shapes
+        let lat: number | undefined;
+        let lng: number | undefined;
+        if (typeof selectedLocation.lat === 'number' && typeof selectedLocation.lng === 'number') {
+          lat = selectedLocation.lat; lng = selectedLocation.lng;
+        } else if (selectedLocation.coords && typeof selectedLocation.coords.lat === 'number') {
+          lat = selectedLocation.coords.lat; lng = selectedLocation.coords.lng;
+        } else if (selectedLocation.location && selectedLocation.location.lat && selectedLocation.location.lng) {
+          lat = selectedLocation.location.lat; lng = selectedLocation.location.lng;
+        }
+        if (typeof lat !== 'number' || typeof lng !== 'number') return;
+        setOverviewWeatherLoading(true);
+        const w = await fetchWeatherForPoint(lat, lng);
+        if (!mounted) return;
+        setOverviewWeather(w);
+      } catch (e) {
+        if (!mounted) return;
+        setOverviewWeather(null);
+      } finally {
+        if (mounted) setOverviewWeatherLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [selectedLocation]);
+
   return (
     <motion.div
       className="fixed left-0 top-16 h-full w-80 bg-gray-800/95 backdrop-blur-md border-r border-gray-700 z-40 overflow-y-auto"
@@ -46,7 +106,30 @@ const Sidebar: React.FC<SidebarProps> = ({
     >
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">Data Overview</h2>
+          <div className="flex items-center gap-2">
+            <img src="/Group 2.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
+            <h2 className="text-xl font-bold">Data Overview</h2>
+            {overviewWeatherLoading ? (
+              <div className="text-xs text-gray-400 ml-2">Loading weather…</div>
+            ) : (overviewWeather && overviewWeather.current) ? (
+              <div className="ml-3 text-sm text-gray-300 flex items-center gap-2">
+                <div className="text-lg">{(() => {
+                  const code = overviewWeather.current.weather_code;
+                  const map: Record<number, string> = {
+                    0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️', 45: '🌫️', 48: '🌫️',
+                    51: '🌦️', 53: '🌦️', 55: '🌧️', 61: '🌧️', 63: '🌧️', 65: '🌧️',
+                    71: '❄️', 73: '❄️', 75: '❄️', 80: '🌧️', 81: '🌧️', 82: '⛈️',
+                    95: '⛈️', 96: '⛈️', 99: '⛈️'
+                  } as const;
+                  return map[code] || '❓';
+                })()}</div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-100">{Math.round(overviewWeather.current.temperature_2m)}°C</div>
+                  <div className="text-xs text-gray-400">{isStormForecast(overviewWeather) ? 'Storm risk' : 'No storm'}</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
           <button 
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-gray-700 transition-colors"
@@ -132,6 +215,97 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
           />
+        </div>
+
+        {/* India Location Selector */}
+        <div className="mt-6 bg-gradient-to-r from-orange-500/20 to-green-500/20 rounded-lg border border-orange-500/30 overflow-hidden">
+          <button
+            onClick={() => setShowIndiaSelector(!showIndiaSelector)}
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors"
+          >
+            <div className="flex items-center space-x-2">
+              <Globe className="w-5 h-5 text-orange-400" />
+              <h3 className="font-semibold text-white">🇮🇳 India Weather</h3>
+            </div>
+            {showIndiaSelector ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+          
+          <AnimatePresence>
+            {showIndiaSelector && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="p-4 pt-0 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Select State
+                    </label>
+                    <select
+                      value={selectedState}
+                      onChange={(e) => handleStateChange(e.target.value)}
+                      className="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                      aria-label="Select Indian State"
+                    >
+                      <option value="">Choose a state...</option>
+                      {INDIAN_STATES.map(state => (
+                        <option key={state.code} value={state.name}>
+                          {state.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedState && districts.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Select District
+                      </label>
+                      <select
+                        value={selectedDistrict}
+                        onChange={(e) => handleDistrictChange(e.target.value)}
+                        className="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                        aria-label="Select District"
+                      >
+                        <option value="">Choose a district...</option>
+                        {districts.map(district => (
+                          <option key={district} value={district}>
+                            {district}
+                          </option>
+                        ))}
+                      </select>
+                    </motion.div>
+                  )}
+
+                  {selectedState && selectedDistrict && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-green-500/20 border border-green-500/40 rounded-lg p-3"
+                    >
+                      <div className="flex items-center space-x-2 text-green-400">
+                        <MapPin className="w-4 h-4" />
+                        <span className="text-sm font-medium">Selected Location</span>
+                      </div>
+                      <p className="text-white text-sm mt-1">
+                        {selectedDistrict}, {selectedState}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Map will focus on this location
+                      </p>
+                    </motion.div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 

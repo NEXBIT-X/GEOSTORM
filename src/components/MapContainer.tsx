@@ -1,15 +1,17 @@
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
 import GlobeMap from './GlobeMap';
+import CesiumMap from './CesiumMap';
 
 interface MapContainerProps {
-  dataType: 'temperature' | 'disasters' | 'environmental';
+  dataType: 'disasters' | 'environmental';
   climateData: ClimateData[];
   disasters: DisasterEvent[];
   environmentalData: EnvironmentalData[];
   onLocationSelect?: (location: any) => void;
-  apiAction?: 'openmeteo_current' | 'openmeteo_hourly' | 'openmeteo_daily';
-  onApiConsumed?: () => void;
   focusCoord?: { lat: number; lng: number; label?: string };
+  infraHazardsEnabled?: boolean;
+  useCesium?: boolean;
+  tilesetUrl?: string;
 }
 
 const MapContainer: React.FC<MapContainerProps> = ({
@@ -17,21 +19,32 @@ const MapContainer: React.FC<MapContainerProps> = ({
   climateData,
   disasters,
   environmentalData,
-  apiAction,
-  onApiConsumed,
   focusCoord,
+  infraHazardsEnabled,
+  useCesium = false,
+  tilesetUrl
 }) => {
   return (
     <div className="absolute inset-0">
-      <GlobeMap
-        dataType={dataType}
-        climateData={climateData}
-        disasters={disasters}
-        environmentalData={environmentalData}
-        apiAction={apiAction}
-        onApiConsumed={onApiConsumed}
-        focusCoord={focusCoord}
-      />
+      {useCesium ? (
+        <CesiumMap
+          dataType={dataType}
+          climateData={climateData}
+          disasters={disasters}
+          environmentalData={environmentalData}
+          focusCoord={focusCoord}
+          tilesetUrl={tilesetUrl}
+        />
+      ) : (
+        <GlobeMap
+          dataType={dataType}
+          climateData={climateData}
+          disasters={disasters}
+          environmentalData={environmentalData}
+          focusCoord={focusCoord}
+          infraHazardsEnabled={infraHazardsEnabled}
+        />
+      )}
     </div>
   );
 };

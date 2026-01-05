@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
-import Card from './ui/Card';
+import { fetchLiveOverlay } from '../services/hazards';
 import { fetchWeatherForPoint, isStormForecast } from '../services/openMeteo';
+import Card from './ui/Card';
+import DisasterDetailPanel from './DisasterDetailPanel';
 
 // Map Open-Meteo weather codes to emoji/icon + description
 const weatherCodeToIcon = (code: number | null | undefined) => {
@@ -42,16 +44,15 @@ const weatherCodeToIcon = (code: number | null | undefined) => {
 };
 
 interface GlobeMapProps {
-  dataType: 'temperature' | 'disasters' | 'environmental';
+  dataType: 'disasters' | 'environmental';
   climateData: ClimateData[];
   disasters: DisasterEvent[];
   environmentalData: EnvironmentalData[];
-  apiAction?: 'openmeteo_current' | 'openmeteo_hourly' | 'openmeteo_daily';
-  onApiConsumed?: () => void;
   focusCoord?: { lat: number; lng: number; label?: string } | undefined;
+  infraHazardsEnabled?: boolean;
 }
 
-const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, environmentalData, apiAction, onApiConsumed, focusCoord }) => {
+const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, environmentalData, focusCoord, infraHazardsEnabled }) => {
   const globeEl = useRef<any>(null);
 
   const data = useMemo(() => {
@@ -82,20 +83,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   const [countryWeather, setCountryWeather] = useState<any | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   // progressive globe image: low-res then swap to high-res
-  const lowResGlobe = '/8081_earthmap10k.jpg';
-  const highResGlobe = '/8081_earthmap10k.jpg';
+  const lowResGlobe = './8081_earthmap10k.jpg';
+  const highResGlobe = './8081_earthmap10k.jpg';
   const [globeImage, setGlobeImage] = useState<string>(highResGlobe);
   const localBump = '/textures/earth-bump.jpg';
   const fallbackBump = 'https://threejs.org/examples/textures/earthbump1k.jpg';
   const [bumpImage, setBumpImage] = useState<string>(fallbackBump);
   const [polarInfo, setPolarInfo] = useState<{ lat: number; lng: number; current?: any | null; daily?: any | null; loading?: boolean } | null>(null);
-  
-  // Minimize/Expand states for corner dialogs
-  const [isWeatherMinimized, setIsWeatherMinimized] = useState(false);
-  const [isCountryMinimized, setIsCountryMinimized] = useState(false);
-  
-  // Auto-rotation control
-  const [isRotating, setIsRotating] = useState(true);
 
   // simple in-memory cache for weather by key (iso or name)
   const weatherCacheRef = useRef<Map<string, any>>(new Map());
@@ -237,57 +231,92 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
     return () => { mounted = false; };
   }, [selectedCountry]);
 
-  // Fetch current weather for the selected country's capital/centroid using Open-Meteo
+  // Fetch weather for selected country
   useEffect(() => {
     let mounted = true;
     setCountryWeather(null);
     setWeatherLoading(false);
+    
     if (!countryDetails) return;
-
-    (async () => {
-      const key = countryDetails.cca3 || countryDetails.ccn3 || (countryDetails.name && (countryDetails.name.common || countryDetails.name.official)) || (selectedCountry && selectedCountry.properties && (selectedCountry.properties.iso_a3 || selectedCountry.properties.ISO_A3 || selectedCountry.properties.ADM0_A3)) || 'unknown';
-      if (weatherCacheRef.current.has(key)) {
-        if (!mounted) return;
-        setCountryWeather(weatherCacheRef.current.get(key));
-        return;
-      }
-
-      // determine coordinates: prefer capitalInfo.latlng, then country latlng
-      let coords: number[] | null = null;
-      if (countryDetails.capitalInfo && Array.isArray(countryDetails.capitalInfo.latlng) && countryDetails.capitalInfo.latlng.length === 2) {
-        coords = countryDetails.capitalInfo.latlng;
-      } else if (Array.isArray(countryDetails.latlng) && countryDetails.latlng.length === 2) {
-        coords = countryDetails.latlng;
-      } else if (selectedCountry && selectedCountry.properties && selectedCountry.properties && selectedCountry.properties.center) {
-        const c = selectedCountry.properties.center;
-        if (Array.isArray(c) && c.length === 2) coords = c;
-      }
-
-      if (!coords) return;
-
-      setWeatherLoading(true);
+    
+    const fetchWeather = async () => {
       try {
-        const [lat, lon] = coords as number[];
-        const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto&forecast_days=3`);
-        if (!r.ok) {
-          if (mounted) setCountryWeather(null);
+        // Get capital coordinates or use country center
+        const lat = countryDetails.capitalInfo?.latlng?.[0] || countryDetails.latlng?.[0];
+        const lng = countryDetails.capitalInfo?.latlng?.[1] || countryDetails.latlng?.[1];
+        
+        if (typeof lat !== 'number' || typeof lng !== 'number') return;
+        
+        // Check cache first
+        const cacheKey = `${countryDetails.cca3 || countryDetails.name?.common}`;
+        if (weatherCacheRef.current.has(cacheKey)) {
+          if (mounted) setCountryWeather(weatherCacheRef.current.get(cacheKey));
           return;
         }
-        const j = await r.json();
-        const current = j.current_weather || null;
-        const daily = j.daily || null;
-        const payload = { current, daily };
-        weatherCacheRef.current.set(key, payload);
-        if (mounted) setCountryWeather(payload);
-      } catch (e) {
-        if (mounted) setCountryWeather(null);
+        
+        setWeatherLoading(true);
+        const weather = await fetchWeatherForPoint(lat, lng);
+        
+        if (mounted && weather) {
+          // Cache the result
+          weatherCacheRef.current.set(cacheKey, weather);
+          setCountryWeather(weather);
+        }
+      } catch (error) {
+        console.error('Error fetching weather:', error);
       } finally {
         if (mounted) setWeatherLoading(false);
       }
-    })();
-
+    };
+    
+    fetchWeather();
     return () => { mounted = false; };
   }, [countryDetails, selectedCountry]);
+
+  // When focusCoord changes (e.g., from search), fetch weather for that location
+  useEffect(() => {
+    if (!focusCoord) return;
+    let mounted = true;
+    
+    (async () => {
+      try {
+        const [aqiRes, weatherRes] = await Promise.allSettled([
+          fetchNearestAQI(focusCoord.lat, focusCoord.lng),
+          fetchWeatherForPoint(focusCoord.lat, focusCoord.lng),
+        ]);
+        
+        if (!mounted) return;
+        
+        if (aqiRes.status === 'fulfilled' && aqiRes.value) setPointAQI(aqiRes.value);
+        else setPointAQI(null);
+
+        if (weatherRes.status === 'fulfilled' && weatherRes.value) {
+          setPointWeather({ 
+            coord: { lat: focusCoord.lat, lng: focusCoord.lng, label: focusCoord.label || 'Location' }, 
+            data: weatherRes.value, 
+            original: null 
+          });
+        } else {
+          setPointWeather({ 
+            coord: { lat: focusCoord.lat, lng: focusCoord.lng, label: focusCoord.label || 'Location' }, 
+            data: null, 
+            original: null 
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setPointAQI(null);
+          setPointWeather({ 
+            coord: { lat: focusCoord.lat, lng: focusCoord.lng, label: focusCoord.label || 'Location' }, 
+            data: null, 
+            original: null 
+          });
+        }
+      }
+    })();
+    
+    return () => { mounted = false; };
+  }, [focusCoord]);
 
   useEffect(() => {
     // enable smooth auto-rotation to mimic Earth's rotation
@@ -295,29 +324,94 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       if (!globeEl.current) return;
       const controls = globeEl.current.controls && globeEl.current.controls();
       if (controls) {
-        controls.autoRotate = isRotating;
+        controls.autoRotate = true;
         controls.autoRotateSpeed = 0.25; // tune for realistic slow rotation
       }
     } catch (e) {
       // ignore if controls aren't available yet
     }
-  }, [isRotating]);
+  }, []);
 
   // Make globe fill the viewport completely
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [globeW, setGlobeW] = useState<number>(window.innerWidth);
   const [globeH, setGlobeH] = useState<number>(window.innerHeight);
   const [pointWeather, setPointWeather] = useState<any | null>(null);
+  const [pointAQI, setPointAQI] = useState<{ value: number; parameter: string; unit: string; category: string } | null>(null);
+  const fetchNearestAQI = async (lat: number, lng: number) => {
+    try {
+      const base = 'https://api.openaq.org/v2/latest';
+      const params = new URLSearchParams({
+        coordinates: `${lat},${lng}`,
+        radius: '50000',
+        limit: '1',
+        order_by: 'distance',
+        sort: 'asc'
+      });
+      const r = await fetch(`${base}?${params.toString()}`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const res = (j.results && j.results[0]) || null;
+      const meas = res ? (res.measurements || []) : [];
+      const pref = ['pm25','pm10','no2'];
+      const m = meas.find((mm:any) => pref.includes(mm.parameter)) || meas[0] || null;
+      if (!m) return null;
+      const val = Number(m.value);
+      const param = String(m.parameter).toUpperCase();
+      const unit = String(m.unit || '');
+      const category = (() => {
+        const v = val;
+        if (param === 'PM25' || param === 'PM2.5') {
+          if (v <= 12) return 'Good';
+          if (v <= 35.4) return 'Moderate';
+          if (v <= 55.4) return 'Unhealthy for Sensitive';
+          if (v <= 150.4) return 'Unhealthy';
+          if (v <= 250.4) return 'Very Unhealthy';
+          return 'Hazardous';
+        }
+        if (param === 'PM10') {
+          if (v <= 54) return 'Good';
+          if (v <= 154) return 'Moderate';
+          if (v <= 254) return 'Unhealthy for Sensitive';
+          if (v <= 354) return 'Unhealthy';
+          if (v <= 424) return 'Very Unhealthy';
+          return 'Hazardous';
+        }
+        return '—';
+      })();
+      return { value: Math.round(val), parameter: param, unit, category };
+    } catch {
+      return null;
+    }
+  };
+  const aqiBadgeClass = (category: string) => {
+    const base = 'text-xs px-2 py-0.5 rounded-full';
+    const map: Record<string, string> = {
+      'Good': 'bg-green-400 text-gray-900',
+      'Moderate': 'bg-amber-400 text-gray-900',
+      'Unhealthy for Sensitive': 'bg-orange-500 text-white',
+      'Unhealthy': 'bg-red-500 text-white',
+      'Very Unhealthy': 'bg-fuchsia-600 text-white',
+      'Hazardous': 'bg-purple-700 text-white',
+      '—': 'bg-gray-500 text-white',
+    };
+    return `${base} ${map[category] || 'bg-gray-500 text-white'}`;
+  };
   const [lastCoord, setLastCoord] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [overlayMode, setOverlayMode] = useState<'current' | 'hourly' | 'daily'>('current');
   const [overlayError, setOverlayError] = useState<string | null>(null);
   const [stormPath, setStormPath] = useState<Array<{ lat: number; lng: number; size: number; color: string }>>([]);
+  const [infraPoints, setInfraPoints] = useState<Array<{ lat: number; lng: number; size: number; color: string; label: string; kind: string; original: any }>>([]);
+  const [infraLoading, setInfraLoading] = useState(false);
+  const [infraError, setInfraError] = useState<string | null>(null);
 
   // Space background and planets
   const spaceGroupRef = useRef<any>(null);
   const planetsRef = useRef<Array<{ mesh: any; orbitRadius: number; speed: number; angle: number; selfRot: number }>>([]);
   const animRef = useRef<number | null>(null);
   const clockRef = useRef<any>(null);
+  const [auroraEnabled] = useState<boolean>(true);
+  const auroraGroupRef = useRef<any>(null);
 
   useEffect(() => {
     const onResize = () => {
@@ -330,19 +424,26 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   }, []);
 
   // External focus (from search)
-  useEffect(() => {
-    if (!focusCoord) return;
-    try {
-      if (globeEl.current) globeEl.current.pointOfView({ lat: focusCoord.lat, lng: focusCoord.lng, altitude: 1.4 }, 900);
-      (async () => {
-        try {
-          const w = await fetchWeatherForPoint(focusCoord.lat, focusCoord.lng);
-          setPointWeather({ coord: focusCoord, data: w, storm: isStormForecast(w) });
-          setLastCoord({ lat: focusCoord.lat, lng: focusCoord.lng, label: focusCoord.label });
-        } catch {}
-      })();
-    } catch {}
-  }, [focusCoord?.lat, focusCoord?.lng]);
+    useEffect(() => {
+      // When external focus is set (from search or selection), just move the camera.
+      // Avoid fetching weather here to prevent network-induced UI stalls.
+      if (!focusCoord) return;
+      try {
+        if (globeEl.current) globeEl.current.pointOfView({ lat: focusCoord.lat, lng: focusCoord.lng, altitude: 1.4 }, 300);
+        // Record last focused coordinate for UI state only
+        setLastCoord(focusCoord);
+        // Do NOT fetch weather here (was causing lag); keep point weather updates on explicit user interactions.
+      } catch (e) {
+        // ignore
+      }
+    }, [focusCoord]);
+
+  // Single pin-like label at the last selected/search coordinate
+  const pinLabel = useMemo(() => {
+    const c = lastCoord || focusCoord;
+    if (!c) return [] as Array<{ lat: number; lng: number; label?: string }>;
+    return [{ lat: c.lat, lng: c.lng, label: c.label || '' }];
+  }, [lastCoord?.lat, lastCoord?.lng, focusCoord?.lat, focusCoord?.lng]);
 
   // Build animated space background with nearby planets
   useEffect(() => {
@@ -448,6 +549,89 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
 
     scene.add(group);
 
+    // Aurora Borealis/Australis effect near poles
+    if (auroraEnabled) {
+      const auroraGroup = new THREE.Group();
+      auroraGroupRef.current = auroraGroup;
+      // simple shader-based ribbon using time-based noise
+      const auroraFrag = `
+        uniform float uTime;
+        varying vec2 vUv;
+        float hash(vec2 p){
+          p = 50.0 * fract(p * 0.3183099 + vec2(0.71,0.113));
+          return -1.0 + 2.0 * fract(p.x * p.y * (p.x + p.y));
+        }
+        float noise(vec2 p){
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f*f*(3.0-2.0*f);
+          float a = hash(i + vec2(0.0,0.0));
+          float b = hash(i + vec2(1.0,0.0));
+          float c = hash(i + vec2(0.0,1.0));
+          float d = hash(i + vec2(1.0,1.0));
+          return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+        }
+        void main(){
+          float t = uTime * 0.15;
+          float n = noise(vUv * 8.0 + vec2(t, t*0.7));
+          float band = smoothstep(0.2, 0.85, n);
+          vec3 col = mix(vec3(0.05,0.2,0.4), vec3(0.1,0.8,0.4), band);
+          col += 0.2 * vec3(0.2, 0.9, 0.6) * band;
+          gl_FragColor = vec4(col, band * 0.75);
+        }
+      `;
+      const auroraVert = `
+        varying vec2 vUv;
+        void main(){
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `;
+      const makeAuroraRing = (radius: number, latDeg: number) => {
+        const geo = new THREE.RingGeometry(radius * 0.92, radius * 1.08, 128, 1);
+        const mat = new THREE.ShaderMaterial({
+          uniforms: { uTime: { value: 0 } },
+          vertexShader: auroraVert,
+          fragmentShader: auroraFrag,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        // position slightly above the globe surface
+        // react-globe.gl uses a globe radius of ~100 units by default
+        const globeRadius = 100;
+        const altitude = 6; // above surface
+        const lat = THREE.MathUtils.degToRad(latDeg);
+        const y = Math.sin(lat) * (globeRadius + altitude);
+        const rOnPlane = Math.cos(lat) * (globeRadius + altitude);
+        mesh.rotation.x = Math.PI / 2; // lie flat, then place on y
+        mesh.position.set(0, y, 0);
+        mesh.scale.set(rOnPlane, rOnPlane, 1);
+        auroraGroup.add(mesh);
+        return mesh as any;
+      };
+
+      // Create two rings for north and south auroras
+      const north = makeAuroraRing(1.0, 70); // around Arctic Circle
+      const south = makeAuroraRing(1.0, -70); // around Antarctic Circle
+      group.add(auroraGroup);
+
+      // Animate uniform time via the same clock
+      const updateAurora = (dt: number) => {
+        [north, south].forEach((m: any) => {
+          if (m && m.material && m.material.uniforms && m.material.uniforms.uTime) {
+            m.material.uniforms.uTime.value += dt;
+          }
+        });
+        // slow wavering
+        auroraGroup.rotation.y += dt * 0.03;
+      };
+
+      // Hook into existing animate via closure below
+      (auroraGroup as any)._update = updateAurora;
+    }
+
     // Animation loop (piggybacks on three render loop)
     const clock = new THREE.Clock();
     clockRef.current = clock;
@@ -463,6 +647,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
         p.mesh.position.set(x, p.mesh.position.y, z);
         p.mesh.rotation.y += dt * p.selfRot;
       }
+      // update aurora
+      try {
+        const aur = auroraGroupRef.current;
+        if (aur && (aur as any)._update) {
+          (aur as any)._update(dt);
+        }
+      } catch {}
       // subtle parallax: shift nebula slightly based on globe POV
       try {
         const pov = globeEl.current.pointOfView && globeEl.current.pointOfView();
@@ -487,6 +678,10 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       // cleanup
       try {
         scene.remove(group);
+        if (auroraGroupRef.current) {
+          try { scene.remove(auroraGroupRef.current); } catch {}
+          auroraGroupRef.current = null;
+        }
         group.traverse((obj: any) => {
           // dispose geometries and materials
           const anyObj: any = obj as any;
@@ -503,53 +698,29 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
     };
   }, []);
 
-  // Trigger Open‑Meteo fetches from sidebar actions
+  
+
+  // Infrastructure + Hazard overlay fetch once when enabled (timer removed)
   useEffect(() => {
-    if (!apiAction) return;
-    const coord = lastCoord ?? { lat: 20, lng: 0, label: 'Selected location' };
+    if (!infraHazardsEnabled) { setInfraPoints([]); setInfraError(null); return; }
+    let mounted = true;
     (async () => {
+      setInfraLoading(true);
+      setInfraError(null);
       try {
-        setOverlayError(null);
-        if (apiAction === 'openmeteo_current') setOverlayMode('current');
-        if (apiAction === 'openmeteo_hourly') setOverlayMode('hourly');
-        if (apiAction === 'openmeteo_daily') setOverlayMode('daily');
-        const w = await fetchWeatherForPoint(coord.lat, coord.lng);
-        setPointWeather({ coord, data: w, storm: isStormForecast(w) });
-        // Build storm path if windy
-        try {
-          const speed = w?.current?.wind_speed_10m || 0;
-          const directionDeg = (w as any)?.current?.wind_direction_10m || (w as any)?.current?.winddirection || 0; // attempt multiple keys via any-cast
-          if (speed > 5) {
-            const R = 6371; // km
-            const steps = 6;
-            const path: Array<{ lat: number; lng: number; size: number; color: string }> = [];
-            for (let i = 1; i <= steps; i++) {
-              const distanceKm = (speed * 3600 / 1000) * i; // simplistic: 1 hour increments
-              const brng = directionDeg * Math.PI / 180;
-              const lat1 = coord.lat * Math.PI / 180;
-              const lng1 = coord.lng * Math.PI / 180;
-              const dR = distanceKm / R;
-              const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dR) + Math.cos(lat1) * Math.sin(dR) * Math.cos(brng));
-              const lng2 = lng1 + Math.atan2(Math.sin(brng) * Math.sin(dR) * Math.cos(lat1), Math.cos(dR) - Math.sin(lat1) * Math.sin(lat2));
-              const newLat = lat2 * 180 / Math.PI;
-              const newLng = lng2 * 180 / Math.PI;
-              path.push({ lat: newLat, lng: newLng, size: 2, color: '#ff5252' });
-            }
-            setStormPath(path);
-          } else {
-            setStormPath([]);
-          }
-        } catch { setStormPath([]); }
-      } catch (e: any) {
-        setOverlayError('Failed to fetch weather data');
-      }
-      finally {
-        // signal to parent so repeated clicks of same action still work
-        try { onApiConsumed && onApiConsumed(); } catch {}
+        const merged = await fetchLiveOverlay();
+        if (mounted) setInfraPoints(merged as any);
+      } catch (e:any) {
+        if (mounted) {
+          setInfraPoints([]);
+          setInfraError('Overlay fetch failed');
+        }
+      } finally {
+        if (mounted) setInfraLoading(false);
       }
     })();
-    // Do not change camera/zoom here
-  }, [apiAction]);
+    return () => { mounted = false; };
+  }, [infraHazardsEnabled]);
 
   return (
     <div ref={wrapperRef} className="absolute inset-0 z-0 m-0 p-0">
@@ -564,21 +735,114 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
         atmosphereAltitude={0.15}
         // subtle cloud layer for realism (optional)
         backgroundColor="rgba(0,0,0,0)"
-        pointsData={[...points, ...stormPath]}
+        pointsData={showData ? [...points, ...stormPath, ...infraPoints] : []}
         pointLat="lat"
         pointLng="lng"
-        // Remove vertical cylinder look: keep points flat on the globe
-        pointAltitude={() => 0}
-        pointRadius={(d: any) => Math.max(0.6, d.size / 2)}
-        pointColor={(d: any) => d.color}
+        // Elevate points above polygons so they're always clickable
+        pointAltitude={(d: any) => {
+          // Hazard/disaster points should be higher than regular points
+          if (d.kind === 'hazard' || d.original?.category || d.original?.intensity) {
+            return 0.015; // Higher altitude for disasters
+          }
+          return 0.005; // Lower altitude for regular points
+        }}
+        pointRadius={(d: any) => {
+          // Make disaster/hazard points larger and more clickable
+          if (d.kind === 'hazard' || d.original?.category || d.original?.intensity) {
+            return Math.max(1.2, d.size / 1.5); // Larger radius for disasters
+          }
+          return Math.max(0.6, d.size / 2);
+        }}
+        pointColor={(d: any) => {
+          // Respect explicit color if provided
+          if (d.color) return d.color;
+          const kind = (d.kind || d.type || d.original?.type || '').toLowerCase();
+          const status = (d.status || d.original?.status || '').toLowerCase();
+          // Infrastructure status mapping
+          if (status) {
+            if (status.includes('operational')) return '#10b981'; // green
+            if (status.includes('degraded')) return '#f59e0b';   // amber
+            if (status.includes('offline')) return '#ef4444';    // red
+          }
+          // Hazard type mapping
+          if (kind) {
+            if (kind.includes('wildfire')) return '#fb923c';     // orange
+            if (kind.includes('storm') || kind.includes('cyclone') || kind.includes('hurricane')) return '#6366f1'; // indigo
+            if (kind.includes('flood')) return '#22d3ee';        // cyan
+          }
+          // Fallbacks
+          if (d.original && typeof d.original.temperature === 'number') {
+            return d.original.temperature > 25 ? '#ef4444' : '#3b82f6';
+          }
+          if (d.original && d.original.severity) {
+            const sev = String(d.original.severity).toLowerCase();
+            if (sev === 'high') return '#dc2626';
+            if (sev === 'medium') return '#f59e0b';
+            return '#fbbf24';
+          }
+          return '#93c5fd';
+        }}
+        // Pin-like dot label for searched/selected place
+        labelsData={pinLabel}
+        labelLat={(d: any) => d.lat}
+        labelLng={(d: any) => d.lng}
+        labelText={(d: any) => {
+          const base = d.label || '';
+          return base;
+        }}
+        labelSize={1.1}
+        labelDotRadius={0.7}
+        // match app theme: soft, light text
+        labelColor={() => 'rgba(229, 231, 235, 0.95)'}
+        labelAltitude={0.01}
         onPointClick={async (d: any) => {
-          // center on click & fetch weather
+          // Check if this is a disaster/hazard point
+          const isDisaster = d.kind === 'hazard' || d.original?.category || d.original?.intensity || d.original?.source;
+          
+          if (isDisaster) {
+            // Show disaster detail panel
+            const disasterData = {
+              id: d.original?.id || d.id || 'unknown',
+              title: d.original?.title || d.label || 'Unknown Event',
+              category: d.original?.category || d.original?.type || 'Event',
+              lat: d.lat,
+              lng: d.lng,
+              intensity: d.original?.intensity,
+              detectedAt: d.original?.detectedAt || d.original?.timestamp,
+              source: d.original?.source,
+              description: d.original?.description,
+              severity: d.original?.severity,
+              type: d.original?.type,
+              status: d.original?.status
+            };
+            setSelectedDisaster(disasterData);
+            return;
+          }
+          
+          // For non-disaster points, center and fetch AQI + weather and expose original data
           if (globeEl.current) globeEl.current.pointOfView({ lat: d.lat, lng: d.lng, altitude: 1.4 }, 600);
           setLastCoord({ lat: d.lat, lng: d.lng, label: d.label });
+          setPointAQI(null);
+          setPointWeather(null);
+          // Fetch AQI and weather in parallel but tolerate failures
           try {
-            const w = await fetchWeatherForPoint(d.lat, d.lng);
-            setPointWeather({ coord: { lat: d.lat, lng: d.lng, label: d.label }, data: w, storm: isStormForecast(w) });
-          } catch {}
+            const [aqiRes, weatherRes] = await Promise.allSettled([
+              fetchNearestAQI(d.lat, d.lng),
+              fetchWeatherForPoint(d.lat, d.lng),
+            ]);
+            if (aqiRes.status === 'fulfilled' && aqiRes.value) setPointAQI(aqiRes.value);
+            else setPointAQI(null);
+
+            if (weatherRes.status === 'fulfilled' && weatherRes.value) {
+              setPointWeather({ coord: { lat: d.lat, lng: d.lng, label: d.label }, data: weatherRes.value, original: d.original });
+            } else {
+              // still expose original data even if weather failed
+              setPointWeather({ coord: { lat: d.lat, lng: d.lng, label: d.label }, data: null, original: d.original });
+            }
+          } catch (e) {
+            setPointAQI(null);
+            setPointWeather({ coord: { lat: d.lat, lng: d.lng, label: d.label }, data: null, original: d.original });
+          }
         }}
         onGlobeClick={(evt: any) => {
           // evt: { lat, lng, clientX, clientY }
@@ -590,27 +854,25 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
             const useLat = lat > 0 ? 89.9999 : -89.9999;
             const useLng = typeof lng === 'number' ? lng : 0;
             setPolarInfo({ lat: useLat, lng: useLng, loading: true });
-            // fetch temperature for the polar coord
+            
+            // Fetch weather data for polar region
             (async () => {
               try {
-                const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${useLat}&longitude=${useLng}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto&forecast_days=3`);
-                if (!r.ok) return setPolarInfo(prev => prev ? { ...prev, current: null, daily: null, loading: false } : null);
-                const j = await r.json();
-                const current = j.current_weather || null;
-                const daily = j.daily || null;
-                setPolarInfo(prev => prev ? { ...prev, current, daily, loading: false } : { lat: useLat, lng: useLng, current, daily, loading: false });
-              } catch (e) {
-                setPolarInfo(prev => prev ? { ...prev, current: null, daily: null, loading: false } : null);
+                const weather = await fetchWeatherForPoint(useLat, useLng);
+                setPolarInfo(prev => prev ? { ...prev, current: weather?.current, daily: weather?.daily, loading: false } : null);
+              } catch (error) {
+                console.error('Error fetching polar weather:', error);
+                setPolarInfo(prev => prev ? { ...prev, loading: false } : null);
               }
             })();
           }
         }}
         polygonsData={countries}
         polygonLabel={(p: any) => p.properties && p.properties.name}
-        polygonCapColor={() => 'rgba(0,0,0,0)'}
-        polygonSideColor={() => 'rgba(255,255,255,0.06)'}
-        polygonStrokeColor={() => 'rgba(200,200,200,0.15)'}
-        polygonAltitude={() => 0.01}
+        polygonCapColor={(p: any) => (p === selectedCountry ? 'rgba(59,130,246,0.12)' : 'rgba(0,0,0,0)')}
+        polygonSideColor={(p: any) => (p === selectedCountry ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.06)')}
+        polygonStrokeColor={(p: any) => (p === selectedCountry ? 'rgba(59,130,246,0.9)' : 'rgba(200,200,200,0.15)')}
+        polygonAltitude={(p: any) => (p === selectedCountry ? 0.008 : 0.001)}
         onPolygonClick={(p: any) => {
           // compute robust centroid via 3D averaging (handles dateline and multipolygons)
           try {
@@ -663,33 +925,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
         width={globeW}
         height={globeH}
       />
-      {/* Point weather overlay */}
-      {pointWeather && (
+      {/* Country weather overlay (top-right) */}
+      {selectedCountry && (
         <div className="absolute right-4 top-4 z-50 w-80">
           <Card>
             <div className="text-sm text-gray-200">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="font-semibold text-lg text-gray-100">{pointWeather.coord.label || 'Location'}</div>
-                  <div className="text-xs text-gray-300">{pointWeather.coord.lat.toFixed(2)}, {pointWeather.coord.lng.toFixed(2)}</div>
-                </div>
-                <div className="flex gap-1">
-                  <button 
-                    onClick={() => setIsWeatherMinimized(!isWeatherMinimized)}
-                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
-                    aria-label={isWeatherMinimized ? "Expand" : "Minimize"}
-                  >
-                    {isWeatherMinimized ? '□' : '−'}
-                  </button>
-                  <button
-                    onClick={() => setPointWeather(null)}
-                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
-                    aria-label="Close"
-                  >✕</button>
-                </div>
-              </div>
-              {!isWeatherMinimized && (
-                <>
+              <div className="font-semibold text-lg text-gray-100">{pointWeather.coord.label || 'Location'}</div>
+              <div className="text-xs text-gray-300">{pointWeather.coord.lat.toFixed(2)}, {pointWeather.coord.lng.toFixed(2)}</div>
               {overlayError && (
                 <div className="mt-2 text-xs text-red-400">{overlayError}</div>
               )}
@@ -743,17 +985,30 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                   </div>
                 </div>
               )}
-                </>
-              )}
+              <div className="mt-3">
+                <button onClick={() => setPointWeather(null)} className="mt-2 w-full glass-button text-white py-2">Close</button>
+              </div>
             </div>
           </Card>
         </div>
       )}
 
+      {/* Point weather overlay removed - using district weather panel in App.tsx instead */}
+
+      {infraHazardsEnabled && (
+        <div className="absolute right-4 bottom-32 z-40 w-64 pointer-events-none">
+          <div className="text-[11px] text-gray-300 space-y-1 pointer-events-auto">
+            {infraLoading && <div className="animate-pulse text-gray-400">Fetching overlay…</div>}
+            {infraError && <div className="text-red-400">{infraError}</div>}
+            {!infraLoading && !infraError && infraPoints.length === 0 && <div className="text-gray-400">No points returned.</div>}
+          </div>
+        </div>
+      )}
+
       {/* Polar overlay when user clicks near the poles */}
       {polarInfo && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70">
-          <div className="max-w-md w-full px-6">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 p-4">
+          <div className="max-w-md w-full px-4 sm:px-6">
             <Card>
               <div className="flex justify-between items-start">
                 <div>
@@ -774,7 +1029,7 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                 )}
                 {!polarInfo.loading && polarInfo.current && (
                   <div className="text-center">
-                    <div className="text-5xl font-bold text-white">{Math.round(polarInfo.current.temperature)}°C</div>
+                    <div className="text-5xl font-bold text-white">{Math.round(polarInfo.current.temperature_2m ?? 0)}°C</div>
                     <div className="text-sm text-gray-300 mt-1">Real-time temperature at the pole</div>
                     <div className="mt-3">
                       <div className="font-medium text-sm text-gray-200">3-Day Forecast</div>
@@ -784,7 +1039,7 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                             const date = polarInfo.daily.time[i];
                             const max = polarInfo.daily.temperature_2m_max[i];
                             const min = polarInfo.daily.temperature_2m_min[i];
-                            const code = polarInfo.daily.weathercode ? polarInfo.daily.weathercode[i] : null;
+                            const code = polarInfo.daily.weather_code ? polarInfo.daily.weather_code[i] : null;
                             const [icon] = (typeof code === 'number') ? weatherCodeToIcon(code) : ['❓','N/A'];
                             return (
                               <div key={i} className="text-center text-xs">
@@ -809,28 +1064,10 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
 
       {/* Configure renderer pixel ratio and texture anisotropy once globe is mounted */}
       {selectedCountry && (
-        <div className="absolute right-4 bottom-4 z-50 w-80">
+        <div className="absolute left-4 bottom-4 z-50 w-80">
           <Card>
             <div className="text-sm text-gray-200">
-              <div className="flex justify-between items-start mb-2">
-                <div className="font-semibold text-lg flex-1">{selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || 'Country'}</div>
-                <div className="flex gap-1">
-                  <button 
-                    onClick={() => setIsCountryMinimized(!isCountryMinimized)}
-                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
-                    aria-label={isCountryMinimized ? "Expand" : "Minimize"}
-                  >
-                    {isCountryMinimized ? '□' : '−'}
-                  </button>
-                  <button
-                    onClick={() => setSelectedCountry(null)}
-                    className="inline-flex items-center justify-center h-6 w-6 rounded glass-button text-xs"
-                    aria-label="Close"
-                  >✕</button>
-                </div>
-              </div>
-              {!isCountryMinimized && (
-                <>
+              <div className="font-semibold text-lg">{selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || 'Country'}</div>
               {!countryDetails && (
                 <div className="mt-2 text-xs text-gray-400">Loading country details…</div>
               )}
@@ -883,23 +1120,10 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
                   </div>
                 </div>
               )}
-                </>
-              )}
             </div>
           </Card>
         </div>
       )}
-
-      {/* Rotation control button - bottom left */}
-      <div className="absolute left-4 bottom-16 z-[60]">
-        <button
-          onClick={() => setIsRotating(!isRotating)}
-          className="w-10 h-10 rounded-md bg-gray-900/90 hover:bg-gray-800 border border-blue-500/50 text-blue-200 backdrop-blur-sm shadow-xl transition-all flex items-center justify-center"
-          aria-label={isRotating ? "Stop rotation" : "Start rotation"}
-        >
-          <span className="text-xl">{isRotating ? '⏸' : '▶'}</span>
-        </button>
-      </div>
     </div>
   );
 };

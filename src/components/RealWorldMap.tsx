@@ -4,7 +4,7 @@ import L, { LatLngExpression } from 'leaflet';
 import { ClimateData, DisasterEvent, EnvironmentalData } from '../types';
 
 interface RealWorldMapProps {
-  dataType: 'temperature' | 'disasters' | 'environmental';
+  dataType: 'disasters' | 'environmental';
   climateData: ClimateData[];
   disasters: DisasterEvent[];
   environmentalData: EnvironmentalData[];
