@@ -208,9 +208,51 @@ function App() {
       {/* Google Maps attribution removed from visible UI */}
 
       {/* Footer removed for full-screen experience */}
+      {/* District weather panel (appears when a district is selected) */}
+      { (districtWeatherLoading || districtWeather) && (
+        <div className="fixed left-4 right-4 sm:left-4 sm:right-auto bottom-4 z-50 w-auto sm:w-64 glass-panel p-3">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <div className="text-sm font-semibold text-white">{districtWeather ? districtWeather.location : 'Loading weather...'}</div>
+              <div className="text-[10px] text-gray-400">{districtWeather ? new Date(districtWeather.timestamp).toLocaleTimeString() : ''}</div>
+            </div>
+            <button onClick={() => setDistrictWeather(null)} className="text-gray-400 hover:text-white text-xs">✕</button>
+          </div>
+
+          <div className="text-sm text-gray-200">
+            {districtWeatherLoading && <div className="text-gray-400 text-xs">Fetching latest weather…</div>}
+            {districtWeather && (
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Temperature</span>
+                  <span className="font-medium text-white">{districtWeather.temperature ?? '—'}°C</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Humidity</span>
+                  <span className="font-medium text-white">{districtWeather.humidity ?? '—'}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Rainfall</span>
+                  <span className="font-medium text-white">{districtWeather.rainfall ?? '—'} mm</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Wind Speed</span>
+                  <span className="font-medium text-white">{districtWeather.windSpeed ?? '—'} km/h</span>
+                </div>
+                {districtWeather.description && (
+                  <div className="pt-1 mt-1 border-t border-gray-700">
+                    <span className="text-gray-300 text-xs italic">{districtWeather.description}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Award badge bottom-right */}
-      <div className="fixed bottom-4 right-4 z-50">
-        <div className="px-4 py-2 rounded-md bg-blue-600/20 border border-blue-500 text-[11px] font-semibold uppercase tracking-wide text-blue-200 backdrop-blur-sm shadow-lg">
+      <div className="fixed bottom-4 right-4 z-40 hidden sm:block">
+        <div className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md bg-blue-600/20 border border-blue-500 text-[9px] sm:text-[11px] font-semibold uppercase tracking-wide text-blue-200 backdrop-blur-sm shadow-lg">
           Google Maps Platform Winner
         </div>
       </div>

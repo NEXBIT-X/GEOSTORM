@@ -12,7 +12,15 @@ interface Props {
   searchError?: string;
 }
 
-const ControlSidebar: React.FC<Props> = ({ selectedDataType, onDataTypeChange, onApiAction, onSearchLocation, searching = false, searchError }) => {
+const ControlSidebar: React.FC<Props> = ({ 
+  selectedDataType, 
+  onDataTypeChange, 
+  onSearchLocation, 
+  onSelectLocation, 
+  onIndiaLocationSelect,
+  searching = false, 
+  searchError 
+}) => {
   const item = (key: Props['selectedDataType'], label: string, Icon: any) => (
     <button
       onClick={() => onDataTypeChange(key)}
@@ -131,11 +139,47 @@ const ControlSidebar: React.FC<Props> = ({ selectedDataType, onDataTypeChange, o
   const [isOpen, setIsOpen] = React.useState(false);
 
   return (
-    <aside className="fixed left-4 top-4 z-50 w-56 space-y-3 p-3 glass-panel">
-      <div className="flex items-center gap-2 mb-2">
-        <img src="/Group 2.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
-        <div className="font-semibold text-sm text-white dark:text-gray-100">GEOSTORM</div>
-      </div>
+    <>
+      {/* Mobile hamburger button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed left-4 top-4 z-50 lg:hidden w-10 h-10 flex items-center justify-center rounded-lg glass-panel"
+        aria-label="Toggle menu"
+      >
+        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {isOpen ? (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          )}
+        </svg>
+      </button>
+
+      {/* Overlay for mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed left-0 top-0 bottom-0 z-50 w-72 sm:w-80 lg:left-4 lg:top-4 lg:bottom-auto lg:w-56 space-y-3 p-3 glass-panel transition-transform duration-300 overflow-y-auto
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="flex items-center gap-2 mb-2">
+          <img src="/Group 2.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
+          <div className="font-semibold text-sm text-white dark:text-gray-100">GEOSTORM</div>
+          {/* Close button for mobile */}
+          <button
+            onClick={() => setIsOpen(false)}
+            className="ml-auto lg:hidden text-gray-400 hover:text-white"
+            aria-label="Close menu"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       <div className="section-title">Data Type</div>
       {item('disasters', 'Disasters', AlertTriangle)}
       {item('environmental', 'Environmental', Leaf)}
@@ -175,7 +219,69 @@ const ControlSidebar: React.FC<Props> = ({ selectedDataType, onDataTypeChange, o
         {searchError && <div className="text-[11px] text-red-400">{searchError}</div>}
       </form>
 
-      
+      {/* India Location Selector */}
+      <div className="pt-2 mt-2 border-t border-gray-700 dark:border-gray-700" />
+      <div className="bg-gradient-to-r from-orange-500/10 to-green-500/10 rounded-lg border border-orange-500/30 overflow-hidden">
+        <button
+          onClick={() => setShowIndiaSelector(!showIndiaSelector)}
+          className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-800/50 transition-colors"
+        >
+          <div className="flex items-center space-x-2">
+            <Globe className="w-4 h-4 text-orange-400" />
+            <span className="text-sm font-medium text-white">🇮🇳 India</span>
+          </div>
+          {showIndiaSelector ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        </button>
+        
+        {showIndiaSelector && (
+          <div className="p-3 space-y-2 bg-gray-900/30">
+            <select
+              value={selectedState}
+              onChange={(e) => handleStateChange(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-600 rounded-md px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
+              aria-label="Select Indian State"
+              style={{ colorScheme: 'dark' }}
+            >
+              <option value="" className="bg-gray-800 text-white">Select State...</option>
+              {INDIAN_STATES.map(state => (
+                <option key={state.code} value={state.name} className="bg-gray-800 text-white">
+                  {state.name}
+                </option>
+              ))}
+            </select>
+
+            {selectedState && districts.length > 0 && (
+              <select
+                value={selectedDistrict}
+                onChange={(e) => handleDistrictChange(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-600 rounded-md px-2 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                aria-label="Select District"
+                style={{ colorScheme: 'dark' }}
+              >
+                <option value="" className="bg-gray-800 text-white">Select District...</option>
+                {districts.map(district => (
+                  <option key={district} value={district} className="bg-gray-800 text-white">
+                    {district}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {selectedState && selectedDistrict && (
+              <div className="bg-green-500/20 border border-green-500/40 rounded-md p-2">
+                <div className="flex items-center space-x-1.5 text-green-400">
+                  <MapPin className="w-3 h-3" />
+                  <span className="text-xs font-medium">Selected</span>
+                </div>
+                <p className="text-white text-xs mt-0.5">
+                  {selectedDistrict}, {selectedState}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
     </aside>
     </>
   );

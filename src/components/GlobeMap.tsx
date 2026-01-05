@@ -90,6 +90,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
   const fallbackBump = 'https://threejs.org/examples/textures/earthbump1k.jpg';
   const [bumpImage, setBumpImage] = useState<string>(fallbackBump);
   const [polarInfo, setPolarInfo] = useState<{ lat: number; lng: number; current?: any | null; daily?: any | null; loading?: boolean } | null>(null);
+  const [selectedDisaster, setSelectedDisaster] = useState<any | null>(null);
+  
+  // Controls whether point data (disasters/environmental/infra) are shown
+  const [showData, setShowData] = useState<boolean>(true);
+  
+  // Controls whether globe auto-rotates
+  const [autoRotate, setAutoRotate] = useState<boolean>(true);
 
   // simple in-memory cache for weather by key (iso or name)
   const weatherCacheRef = useRef<Map<string, any>>(new Map());
@@ -324,13 +331,13 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       if (!globeEl.current) return;
       const controls = globeEl.current.controls && globeEl.current.controls();
       if (controls) {
-        controls.autoRotate = true;
+        controls.autoRotate = autoRotate;
         controls.autoRotateSpeed = 0.25; // tune for realistic slow rotation
       }
     } catch (e) {
       // ignore if controls aren't available yet
     }
-  }, []);
+  }, [autoRotate]);
 
   // Make globe fill the viewport completely
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -929,65 +936,137 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       {selectedCountry && (
         <div className="absolute right-4 top-4 z-50 w-80">
           <Card>
-            <div className="text-sm text-gray-200">
-              <div className="font-semibold text-lg text-gray-100">{pointWeather.coord.label || 'Location'}</div>
-              <div className="text-xs text-gray-300">{pointWeather.coord.lat.toFixed(2)}, {pointWeather.coord.lng.toFixed(2)}</div>
-              {overlayError && (
-                <div className="mt-2 text-xs text-red-400">{overlayError}</div>
-              )}
-              {overlayMode === 'current' && pointWeather.data?.current && (
-                <div className="mt-2">
-                  <div className="flex items-center gap-2">
-                    <div className="text-xl">
-                      {(() => {
-                        const code = pointWeather.data.current.weather_code;
-                        const [icon] = weatherCodeToIcon(typeof code === 'number' ? code : null);
-                        return icon;
-                      })()}
-                    </div>
-                    <div className="text-xs text-gray-300">Current conditions</div>
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-3">
+                {countryDetails?.cca2 && (
+                  <img 
+                    src={`https://flagcdn.com/w40/${countryDetails.cca2.toLowerCase()}.png`}
+                    alt={`${countryDetails.name?.common || 'Country'} flag`}
+                    className="w-8 h-6 object-cover rounded shadow-sm"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+                <div>
+                  <div className="font-semibold text-base text-gray-100">
+                    {countryDetails?.name?.common || selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || 'Country'}
                   </div>
-                  <div>Temp: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.temperature_2m)}°C</span></div>
-                  <div>Wind: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.wind_speed_10m ?? 0)} m/s</span></div>
-                  <div>Gusts: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.wind_gusts_10m ?? 0)} m/s</span></div>
-                  <div>Precip: <span className="font-medium text-gray-100">{Math.round(pointWeather.data.current.precipitation ?? 0)} mm</span></div>
+                  <div className="text-xs text-gray-300">
+                    {countryDetails?.capital ? `Capital: ${countryDetails.capital[0]}` : ''}
+                  </div>
                 </div>
-              )}
-              {overlayMode === 'hourly' && pointWeather.data?.hourly && Array.isArray(pointWeather.data.hourly.temperature_2m) && (
-                <div className="mt-3">
-                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Next hours</div>
-                  <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
-                    {pointWeather.data.hourly.temperature_2m.slice(0,6).map((t:number, i:number) => (
-                      <div key={i} className="p-1 rounded bg-gray-800/40 border border-white/10">
-                        <div className="font-medium text-gray-100">{Math.round(t)}°C</div>
-                        <div className="text-[10px] text-gray-300">Gust {Math.round((pointWeather.data.hourly.wind_gusts_10m?.[i] ?? 0))} m/s</div>
-                        <div className="text-[10px] text-gray-300">Precip {Math.round((pointWeather.data.hourly.precipitation?.[i] ?? 0))} mm</div>
+              </div>
+              <button
+                onClick={() => { setSelectedCountry(null); setCountryDetails(null); setCountryWeather(null); }}
+                className="text-gray-400 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-300 max-h-[calc(100vh-180px)] overflow-y-auto">
+              {weatherLoading && <div className="text-sm text-gray-400">Loading weather…</div>}
+              {!weatherLoading && countryWeather && countryWeather.current && (
+                <div>
+                  {/* Current Weather */}
+                  <div className="mb-3 pb-3 border-b border-gray-700">
+                    <div className="text-xs font-semibold text-gray-400 mb-2">Current Weather</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl">
+                        {(() => {
+                          const code = countryWeather.current.weather_code;
+                          const [icon] = weatherCodeToIcon(typeof code === 'number' ? code : null);
+                          return icon;
+                        })()}
                       </div>
-                    ))}
+                      <div>
+                        <div className="text-sm text-gray-100">{Math.round(countryWeather.current.temperature_2m)}°C</div>
+                        <div className="text-[11px] text-gray-400">{countryDetails?.region || ''}</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[11px] text-gray-300">Wind: <span className="text-gray-100">{Math.round(countryWeather.current.wind_speed_10m ?? 0)} m/s</span></div>
+                    <div className="text-[11px] text-gray-300">Precip: <span className="text-gray-100">{Math.round(countryWeather.current.precipitation ?? 0)} mm</span></div>
+                    <div className="mt-2">
+                      <div className="text-[11px] text-gray-300">Storm forecast: <span className="font-medium text-gray-100">{isStormForecast(countryWeather) ? 'Yes' : 'No'}</span></div>
+                    </div>
                   </div>
-                </div>
-              )}
-              {overlayMode === 'daily' && pointWeather.data?.daily && Array.isArray(pointWeather.data.daily.temperature_2m_max) && (
-                <div className="mt-3">
-                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Next days</div>
-                  <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
-                    {pointWeather.data.daily.temperature_2m_max.slice(0,3).map((max:number, i:number) => {
-                      const min = pointWeather.data.daily.temperature_2m_min?.[i];
-                      const code = pointWeather.data.daily.weather_code?.[i];
-                      const [icon] = weatherCodeToIcon(typeof code === 'number' ? code : null);
+
+                  {/* 3-Day Forecast */}
+                  {countryWeather.daily && countryWeather.daily.temperature_2m_max && (
+                    <div className="mb-3 pb-3 border-b border-gray-700">
+                      <div className="text-xs font-semibold text-gray-400 mb-2">3-Day Forecast</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {Array.from({ length: Math.min(3, countryWeather.daily.time?.length || 0) }).map((_, i) => {
+                          const date = countryWeather.daily.time[i];
+                          const max = countryWeather.daily.temperature_2m_max[i];
+                          const min = countryWeather.daily.temperature_2m_min[i];
+                          const code = countryWeather.daily.weather_code?.[i];
+                          const [icon, desc] = weatherCodeToIcon(typeof code === 'number' ? code : null);
+                          return (
+                            <div key={i} className="bg-gray-800/40 border border-gray-700 rounded-lg p-2 text-center">
+                              <div className="text-[10px] text-gray-400 mb-1">{new Date(date).toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                              <div className="text-xl mb-1">{icon}</div>
+                              <div className="text-xs font-medium text-gray-100">{Math.round(max)}° / {Math.round(min)}°</div>
+                              <div className="text-[9px] text-gray-400 mt-1">{desc}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Disasters in Country */}
+                  {(() => {
+                    const countryName = countryDetails?.name?.common || selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || '';
+                    const countryDisasters = disasters.filter((d: DisasterEvent) => {
+                      const loc = (d.location || '').toLowerCase();
+                      return loc.includes(countryName.toLowerCase());
+                    });
+                    
+                    if (countryDisasters.length > 0) {
                       return (
-                        <div key={i} className="p-1 rounded bg-gray-800/40 border border-white/10 text-center">
-                          <div className="text-xl">{icon}</div>
-                          <div className="font-medium text-gray-100">{Math.round(max)}°/{Math.round(min ?? max)}°</div>
+                        <div>
+                          <div className="text-xs font-semibold text-gray-400 mb-2">Active Disasters ({countryDisasters.length})</div>
+                          <div className="space-y-2">
+                            {countryDisasters.slice(0, 5).map((disaster: DisasterEvent, idx: number) => (
+                              <div 
+                                key={idx} 
+                                className="bg-gray-800/40 border border-gray-700 rounded-lg p-2 cursor-pointer hover:bg-gray-800/60 transition-colors"
+                                onClick={() => setSelectedDisaster(disaster)}
+                              >
+                                <div className="flex justify-between items-start">
+                                  <div className="flex-1">
+                                    <div className="text-xs font-medium text-gray-100">{disaster.type}</div>
+                                    <div className="text-[10px] text-gray-400 mt-0.5">{disaster.location}</div>
+                                  </div>
+                                  <div className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                    disaster.severity === 'High' ? 'bg-red-600/30 text-red-300' :
+                                    disaster.severity === 'Medium' ? 'bg-amber-600/30 text-amber-300' :
+                                    'bg-yellow-600/30 text-yellow-300'
+                                  }`}>
+                                    {disaster.severity}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                            {countryDisasters.length > 5 && (
+                              <div className="text-[10px] text-gray-500 text-center">+{countryDisasters.length - 5} more</div>
+                            )}
+                          </div>
                         </div>
                       );
-                    })}
-                  </div>
+                    }
+                    return (
+                      <div className="text-[11px] text-gray-500 italic">No active disasters reported</div>
+                    );
+                  })()}
                 </div>
               )}
-              <div className="mt-3">
-                <button onClick={() => setPointWeather(null)} className="mt-2 w-full glass-button text-white py-2">Close</button>
-              </div>
+              {!weatherLoading && !countryWeather && (
+                <div className="text-sm text-gray-400">Weather not available for this country.</div>
+              )}
             </div>
           </Card>
         </div>
@@ -1063,67 +1142,35 @@ const GlobeMap: React.FC<GlobeMapProps> = ({ dataType, climateData, disasters, e
       )}
 
       {/* Configure renderer pixel ratio and texture anisotropy once globe is mounted */}
-      {selectedCountry && (
-        <div className="absolute left-4 bottom-4 z-50 w-80">
-          <Card>
-            <div className="text-sm text-gray-200">
-              <div className="font-semibold text-lg">{selectedCountry.properties?.name || selectedCountry.properties?.ADMIN || 'Country'}</div>
-              {!countryDetails && (
-                <div className="mt-2 text-xs text-gray-400">Loading country details…</div>
-              )}
-              {countryDetails && (
-                <div className="mt-2">
-                  <div className="text-sm text-gray-300">Capital: <span className="font-medium text-gray-100">{(countryDetails.capital && countryDetails.capital[0]) || '—'}</span></div>
-                  <div className="text-sm text-gray-300">Region: <span className="font-medium text-gray-100">{countryDetails.region || '—'}</span></div>
-                  <div className="text-sm text-gray-300">Population: <span className="font-medium text-gray-100">{countryDetails.population ? countryDetails.population.toLocaleString() : '—'}</span></div>
-                  {countryDetails.flags && countryDetails.flags.svg && (
-                    <img src={countryDetails.flags.svg} alt="flag" className="mt-2 h-10 w-auto border rounded" />
-                  )}
 
-                  <div className="mt-3">
-                    <div className="font-semibold text-sm text-gray-200">Current Weather</div>
-                    {weatherLoading && <div className="text-xs text-gray-400 mt-1">Loading weather…</div>}
-                    {!weatherLoading && !countryWeather && (
-                      <div className="text-xs text-gray-400 mt-1">No weather data available.</div>
-                    )}
-                    {countryWeather && (
-                      <div className="mt-1 text-sm text-gray-300">
-                        <div>Temperature: <span className="font-medium text-gray-100">{countryWeather.current?.temperature ?? '—'}°C</span></div>
-                        <div>Wind Speed: <span className="font-medium text-gray-100">{countryWeather.current?.windspeed ?? '—'} m/s</span></div>
-                        <div>Wind Dir: <span className="font-medium text-gray-100">{countryWeather.current?.winddirection ?? '—'}°</span></div>
-                        <div className="text-xs text-gray-400">Last update: {countryWeather.current?.time ? new Date(countryWeather.current.time).toLocaleString() : '—'}</div>
-
-                        {/* small forecast */}
-                        {countryWeather.daily && (
-                          <div className="mt-2">
-                            <div className="font-medium text-sm text-gray-200">3-Day Forecast</div>
-                            <div className="mt-1 grid grid-cols-3 gap-2">
-                              {Array.from({ length: Math.min(3, (countryWeather.daily.time || []).length) }).map((_, i) => {
-                                const date = countryWeather.daily.time[i];
-                                const max = countryWeather.daily.temperature_2m_max[i];
-                                const min = countryWeather.daily.temperature_2m_min[i];
-                                const code = countryWeather.daily.weathercode ? countryWeather.daily.weathercode[i] : null;
-                                const [icon] = (typeof code === 'number') ? weatherCodeToIcon(code) : ['❓','N/A'];
-                                return (
-                                  <div key={i} className="text-center text-xs">
-                                    <div className="text-2xl">{icon}</div>
-                                    <div className="truncate">{new Date(date).toLocaleDateString()}</div>
-                                    <div className="text-gray-300">{Math.round(max)}° / {Math.round(min)}°</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
+      {/* Disaster Detail Panel */}
+      {selectedDisaster && (
+        <DisasterDetailPanel
+          disaster={selectedDisaster}
+          onClose={() => setSelectedDisaster(null)}
+        />
       )}
+
+      {/* Data toggle: show/hide disaster & environmental points */}
+      <div className="absolute bottom-4 left-4 z-50 flex gap-2">
+        <button
+          onClick={() => setShowData(!showData)}
+          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors shadow backdrop-blur-sm border ${showData ? 'bg-blue-600/90 hover:bg-blue-700/90 text-white border-blue-400/50' : 'bg-gray-800/90 hover:bg-gray-700/90 text-gray-200 border-gray-600/50'}`}
+          aria-pressed={showData}
+          title={showData ? 'Hide data points' : 'Show data points'}
+        >
+          {showData ? 'Hide Data' : 'Show Data'}
+        </button>
+        
+        <button
+          onClick={() => setAutoRotate(!autoRotate)}
+          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors shadow backdrop-blur-sm border ${autoRotate ? 'bg-green-600/90 hover:bg-green-700/90 text-white border-green-400/50' : 'bg-gray-800/90 hover:bg-gray-700/90 text-gray-200 border-gray-600/50'}`}
+          aria-pressed={autoRotate}
+          title={autoRotate ? 'Stop rotation' : 'Start rotation'}
+        >
+          {autoRotate ? '⏸ Stop Spin' : '▶ Start Spin'}
+        </button>
+      </div>
     </div>
   );
 };
