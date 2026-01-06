@@ -29,7 +29,7 @@ const Header: React.FC<HeaderProps> = ({ selectedDataType, onDataTypeChange, onM
           </Button>
           
           <div className="flex items-center space-x-3">
-            <img src='/Group 2.png' alt="Logo" className="w-8 h-8" />
+            <img src='/textures/Groupdev.png' alt="Logo" className="w-8 h-8" />
             <div>
               <h1 className="text-xl font-bold">GEOSTORM</h1>
               <p className="text-sm text-gray-400">Real-time environmental monitoring</p>

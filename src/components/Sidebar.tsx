@@ -107,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            <img src="/Group 2.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
+            <img src="/textures/Groupdev.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
             <h2 className="text-xl font-bold">Data Overview</h2>
             {overviewWeatherLoading ? (
               <div className="text-xs text-gray-400 ml-2">Loading weather…</div>

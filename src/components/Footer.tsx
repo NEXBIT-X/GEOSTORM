@@ -5,18 +5,17 @@ const Footer: React.FC = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="fixed bottom-0 left-0 right-0 bg-gray-900/90 backdrop-blur-sm border-t border-gray-800 z-40">
+    <>
+      
+
+      <footer className="fixed bottom-0 left-0 right-0 bg-gray-900/90 backdrop-blur-sm border-t border-gray-800 z-40">
       <div className="max-w-7xl mx-auto px-6 py-2">
         <div className="flex items-center justify-between">
-          {/* Left Section - Brand & Award */}
+          {/* Left Section - Brand */}
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-2">
               <Globe className="w-4 h-4 text-blue-400" />
               <span className="font-semibold text-white text-sm">GEOSTORM</span>
-            </div>
-            <div className="hidden lg:flex items-center space-x-1 text-xs text-yellow-400">
-              <span className="text-xs">🏆</span>
-              <span>Google Maps Platform Award Winner 2025</span>
             </div>
           </div>
 
@@ -54,6 +53,7 @@ const Footer: React.FC = () => {
         </div>
       </div>
     </footer>
+    </>
   );
 };
 

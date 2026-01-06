@@ -13,7 +13,7 @@ const ResilienceOverlayPanel: React.FC<Props> = ({ enabled, loading = false, err
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
-    <div className="fixed bottom-20 sm:bottom-24 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-50">
       <div className="relative">
         {/* Tooltip */}
         {showTooltip && (

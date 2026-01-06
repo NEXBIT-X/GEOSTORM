@@ -249,13 +249,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* Award badge bottom-right */}
-      <div className="fixed bottom-4 right-4 z-40 hidden sm:block">
-        <div className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-md bg-blue-600/20 border border-blue-500 text-[9px] sm:text-[11px] font-semibold uppercase tracking-wide text-blue-200 backdrop-blur-sm shadow-lg">
-          Google Maps Platform Winner
-        </div>
-      </div>
     </div>
   );
 }

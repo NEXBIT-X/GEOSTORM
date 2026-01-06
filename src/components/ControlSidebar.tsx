@@ -167,7 +167,7 @@ const ControlSidebar: React.FC<Props> = ({
       <aside className={`fixed left-0 top-0 bottom-0 z-50 w-72 sm:w-80 lg:left-4 lg:top-4 lg:bottom-auto lg:w-56 space-y-3 p-3 glass-panel transition-transform duration-300 overflow-y-auto
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="flex items-center gap-2 mb-2">
-          <img src="/Group 2.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
+          <img src="/textures/Groupdev.png" alt="GEOSTORM logo" className="h-6 w-6 rounded" />
           <div className="font-semibold text-sm text-white dark:text-gray-100">GEOSTORM</div>
           {/* Close button for mobile */}
           <button
